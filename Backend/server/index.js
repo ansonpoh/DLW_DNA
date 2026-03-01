@@ -44,7 +44,7 @@ app.get("/", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
-});
+}); 
 
 app.post("/api/auth/register", async (req, res) => {
   const { name, email, password } = req.body;
