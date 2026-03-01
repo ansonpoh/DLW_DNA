@@ -83,12 +83,20 @@ export default function DashboardPage() {
               public safety advisories.
             </p>
           </div>
-          <Link
-            href="/"
-            className="rounded-full border border-white/40 px-5 py-2 text-sm font-semibold transition hover:bg-white/10"
-          >
-            Log Out
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/profile"
+              className="rounded-full border border-cyan-200/60 bg-cyan-300/20 px-5 py-2 text-sm font-semibold transition hover:bg-cyan-300/30"
+            >
+              Profile
+            </Link>
+            <Link
+              href="/"
+              className="rounded-full border border-white/40 px-5 py-2 text-sm font-semibold transition hover:bg-white/10"
+            >
+              Log Out
+            </Link>
+          </div>
         </section>
 
         <section className="rounded-2xl border border-teal-200/30 bg-teal-100/10 p-6">
