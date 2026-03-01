@@ -91,6 +91,12 @@ export default function DashboardPage() {
               Profile
             </Link>
             <Link
+              href="/dashboard/report/submitted"
+              className="rounded-full border border-teal-200/60 bg-teal-300/20 px-5 py-2 text-sm font-semibold transition hover:bg-teal-300/30"
+            >
+              My Reports
+            </Link>
+            <Link
               href="/"
               className="rounded-full border border-white/40 px-5 py-2 text-sm font-semibold transition hover:bg-white/10"
             >
@@ -240,3 +246,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

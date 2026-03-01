@@ -167,7 +167,6 @@ function shapeReportResponse(row, mapping) {
   const reportId = toJsonSafeValue(row?.report_id ?? null);
   return {
     report_id: reportId,
-    reference_code: reportId === null ? "" : `ASH-${String(reportId).padStart(6, "0")}`,
     type: mapping.type ? row?.[mapping.type] ?? "" : "",
     description: mapping.description ? row?.[mapping.description] ?? "" : "",
     happening_now: mapping.happening_now ? Boolean(row?.[mapping.happening_now]) : false,
@@ -236,3 +235,4 @@ export async function listOwnReports(authUser) {
     reports: rows.map((row) => shapeReportResponse(row, mapping)),
   };
 }
+

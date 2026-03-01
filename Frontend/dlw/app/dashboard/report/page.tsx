@@ -307,12 +307,20 @@ export default function ReportPage() {
               Fast reporting flow with location context and safety-first checks.
             </p>
           </div>
-          <Link
-            href="/dashboard"
-            className="rounded-full border border-white/40 px-5 py-2 text-sm font-semibold transition hover:bg-white/10"
-          >
-            Back to Dashboard
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/report/submitted"
+              className="rounded-full border border-cyan-200/60 bg-cyan-300/20 px-5 py-2 text-sm font-semibold transition hover:bg-cyan-300/30"
+            >
+              My Reports
+            </Link>
+            <Link
+              href="/dashboard"
+              className="rounded-full border border-white/40 px-5 py-2 text-sm font-semibold transition hover:bg-white/10"
+            >
+              Back to Dashboard
+            </Link>
+          </div>
         </section>
 
         <section className="rounded-2xl border border-white/20 bg-white/10 p-6">
@@ -498,6 +506,12 @@ export default function ReportPage() {
                 <div className="mt-4 space-y-2 rounded-lg border border-emerald-200/40 bg-emerald-300/20 p-4 text-sm text-emerald-50">
                   <p className="font-semibold">Report received</p>
                   <p>You may be contacted for clarification.</p>
+                  <Link
+                    href="/dashboard/report/submitted"
+                    className="inline-flex rounded-full border border-emerald-100/40 bg-emerald-100/20 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-100/30"
+                  >
+                    View my submitted reports
+                  </Link>
                 </div>
               ) : null}
             </div>
@@ -518,3 +532,4 @@ export default function ReportPage() {
     </div>
   );
 }
+
