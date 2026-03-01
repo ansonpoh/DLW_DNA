@@ -30,4 +30,6 @@ export const env = {
     process.env.GEOCODING_USER_AGENT || "dlw-dna/1.0 (postal-geocode)",
   DEFAULT_POSTAL_COUNTRY_CODE:
     process.env.DEFAULT_POSTAL_COUNTRY_CODE || "sg",
+  DETECTION_INGEST_KEY: String(process.env.DETECTION_INGEST_KEY || "").trim(),
+  DETECTION_REPORT_USER_ID: String(process.env.DETECTION_REPORT_USER_ID || "").trim(),
 };

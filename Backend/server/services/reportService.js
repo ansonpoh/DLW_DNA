@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { prisma } from "../config/prisma.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -6,6 +7,9 @@ const REPORTS_TABLE_SCHEMA = "reports";
 const REPORTS_TABLE_NAME = "reports";
 const REPORTS_TABLE = `${REPORTS_TABLE_SCHEMA}.${REPORTS_TABLE_NAME}`;
 const DEFAULT_STATUS = "submitted";
+const DEFAULT_PRIORITY = "Medium";
+const DEFAULT_DETECTION_PRIORITY = "High";
+const DEFAULT_DETECTION_TYPE = "Accident";
 const REPORT_COLUMN_CANDIDATES = {
   type: ["type"],
   description: ["description"],
@@ -31,6 +35,26 @@ function normalizeCreateReportPayload(payload) {
     longitude: payload?.longitude ?? null,
     priority: String(payload?.priority || "").trim(),
     status: String(payload?.status || "").trim(),
+  };
+}
+
+function normalizeCreateDetectionPayload(payload) {
+  return {
+    type: String(payload?.type || DEFAULT_DETECTION_TYPE).trim() || DEFAULT_DETECTION_TYPE,
+    description: String(payload?.description || "").trim(),
+    happening_now: payload?.happening_now ?? true,
+    safe_to_continue: payload?.safe_to_continue ?? false,
+    location_label: String(payload?.location_label || "").trim(),
+    location_source: String(payload?.location_source || "camera").trim(),
+    latitude: payload?.latitude ?? null,
+    longitude: payload?.longitude ?? null,
+    priority:
+      String(payload?.priority || DEFAULT_DETECTION_PRIORITY).trim() ||
+      DEFAULT_DETECTION_PRIORITY,
+    status: String(payload?.status || DEFAULT_STATUS).trim() || DEFAULT_STATUS,
+    camera_id: String(payload?.camera_id || "").trim(),
+    confidence: payload?.confidence,
+    detected_at: String(payload?.detected_at || "").trim(),
   };
 }
 
@@ -115,6 +139,28 @@ async function getProfileUserId(supabaseUserId) {
   return profileUserId;
 }
 
+function buildDetectionDescription(reportInput) {
+  const tags = [];
+  if (reportInput.camera_id) {
+    tags.push(`camera=${reportInput.camera_id}`);
+  }
+  if (reportInput.confidence !== null && reportInput.confidence !== undefined) {
+    const parsed = Number(reportInput.confidence);
+    if (!Number.isNaN(parsed)) {
+      tags.push(`confidence=${parsed.toFixed(2)}`);
+    }
+  }
+  if (reportInput.detected_at) {
+    tags.push(`detected_at=${reportInput.detected_at}`);
+  }
+
+  const suffix = tags.length ? ` [${tags.join(", ")}]` : "";
+  return (
+    reportInput.description ||
+    `Accident detected by automated camera analysis.${suffix}`
+  );
+}
+
 function buildInsertParts(reportInput, mapping) {
   const insertColumns = ["user_id"];
   const placeholders = ["$1::uuid"];
@@ -141,7 +187,7 @@ function buildInsertParts(reportInput, mapping) {
   assignIfMapped("location_source", reportInput.location_source || "manual");
   assignIfMapped("latitude", reportInput.latitude);
   assignIfMapped("longitude", reportInput.longitude);
-  assignIfMapped("priority", reportInput.priority || "Medium");
+  assignIfMapped("priority", reportInput.priority || DEFAULT_PRIORITY);
   assignIfMapped("status", reportInput.status || DEFAULT_STATUS);
 
   return { insertColumns, placeholders, values };
@@ -177,9 +223,33 @@ function shapeReportResponse(row, mapping) {
     location_source: mapping.location_source ? row?.[mapping.location_source] ?? "" : "",
     latitude: mapping.latitude ? row?.[mapping.latitude] ?? null : null,
     longitude: mapping.longitude ? row?.[mapping.longitude] ?? null : null,
-    priority: mapping.priority ? row?.[mapping.priority] ?? "Medium" : "Medium",
+    priority: mapping.priority ? row?.[mapping.priority] ?? DEFAULT_PRIORITY : DEFAULT_PRIORITY,
     status: mapping.status ? row?.[mapping.status] ?? DEFAULT_STATUS : DEFAULT_STATUS,
     created_at: toJsonSafeValue(row?.created_at ?? null),
+  };
+}
+
+async function createReportForUserId(userId, payload) {
+  payload.latitude = parseCoordinate(payload.latitude, "latitude");
+  payload.longitude = parseCoordinate(payload.longitude, "longitude");
+  validateCoordinates(payload.latitude, payload.longitude);
+
+  payload.user_id = userId;
+
+  const mapping = await getReportColumnMapping();
+  const { insertColumns, placeholders, values } = buildInsertParts(payload, mapping);
+  const selectColumns = buildSelectColumns(mapping);
+  const insertSql = `
+    insert into ${REPORTS_TABLE} (${insertColumns.join(", ")})
+    values (${placeholders.join(", ")})
+    returning ${selectColumns.join(", ")}
+  `;
+  const rows = await prisma.$queryRawUnsafe(insertSql, ...values);
+  const created = rows?.[0];
+
+  return {
+    message: "Report submitted successfully.",
+    report: shapeReportResponse(created, mapping),
   };
 }
 
@@ -194,28 +264,22 @@ export async function createReport(authUser, payload) {
     throw new HttpError(400, "Report description is required.");
   }
 
-  reportInput.latitude = parseCoordinate(reportInput.latitude, "latitude");
-  reportInput.longitude = parseCoordinate(reportInput.longitude, "longitude");
-  validateCoordinates(reportInput.latitude, reportInput.longitude);
-
   const profileUserId = await getProfileUserId(authUser.id);
-  reportInput.user_id = profileUserId;
+  return createReportForUserId(profileUserId, reportInput);
+}
 
-  const mapping = await getReportColumnMapping();
-  const { insertColumns, placeholders, values } = buildInsertParts(reportInput, mapping);
-  const selectColumns = buildSelectColumns(mapping);
-  const insertSql = `
-    insert into ${REPORTS_TABLE} (${insertColumns.join(", ")})
-    values (${placeholders.join(", ")})
-    returning ${selectColumns.join(", ")}
-  `;
-  const rows = await prisma.$queryRawUnsafe(insertSql, ...values);
-  const created = rows?.[0];
+export async function createDetectionReport(payload) {
+  if (!env.DETECTION_REPORT_USER_ID) {
+    throw new HttpError(
+      500,
+      "DETECTION_REPORT_USER_ID is not configured on the backend server.",
+    );
+  }
 
-  return {
-    message: "Report submitted successfully.",
-    report: shapeReportResponse(created, mapping),
-  };
+  const reportInput = normalizeCreateDetectionPayload(payload);
+  reportInput.description = buildDetectionDescription(reportInput);
+
+  return createReportForUserId(env.DETECTION_REPORT_USER_ID, reportInput);
 }
 
 export async function listOwnReports(authUser) {
@@ -235,4 +299,3 @@ export async function listOwnReports(authUser) {
     reports: rows.map((row) => shapeReportResponse(row, mapping)),
   };
 }
-

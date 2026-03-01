@@ -1,8 +1,21 @@
-import { createReport, listOwnReports } from "../services/reportService.js";
+import {
+  createDetectionReport,
+  createReport,
+  listOwnReports,
+} from "../services/reportService.js";
 
 export async function postReport(req, res, next) {
   try {
     const result = await createReport(req.authUser, req.body || {});
+    return res.status(201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postDetectionReport(req, res, next) {
+  try {
+    const result = await createDetectionReport(req.body || {});
     return res.status(201).json(result);
   } catch (error) {
     return next(error);
