@@ -26,4 +26,8 @@ export const env = {
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   DATABASE_URL: process.env.DATABASE_URL,
+  GEOCODING_USER_AGENT:
+    process.env.GEOCODING_USER_AGENT || "dlw-dna/1.0 (postal-geocode)",
+  DEFAULT_POSTAL_COUNTRY_CODE:
+    process.env.DEFAULT_POSTAL_COUNTRY_CODE || "sg",
 };

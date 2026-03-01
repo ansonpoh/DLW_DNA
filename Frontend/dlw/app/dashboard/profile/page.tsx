@@ -5,13 +5,18 @@ import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import InteractiveLocationMap from "./InteractiveLocationMap";
 
 type ProfileForm = {
   display_name: string;
   email: string;
   phone_number: string;
   home_location: string;
+  home_lat: string;
+  home_lng: string;
   work_location: string;
+  work_lat: string;
+  work_lng: string;
 };
 
 const initialProfile: ProfileForm = {
@@ -19,7 +24,11 @@ const initialProfile: ProfileForm = {
   email: "",
   phone_number: "",
   home_location: "",
+  home_lat: "",
+  home_lng: "",
   work_location: "",
+  work_lat: "",
+  work_lng: "",
 };
 
 export default function ProfilePage() {
@@ -30,6 +39,9 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [accessToken, setAccessToken] = useState("");
+  const [activeMapPicker, setActiveMapPicker] = useState<"home" | "work" | null>(
+    null,
+  );
 
   useEffect(() => {
     const sessionRaw = localStorage.getItem("supabase_session");
@@ -72,7 +84,23 @@ export default function ProfilePage() {
         email: String(data.profile?.email || ""),
         phone_number: String(data.profile?.phone_number || ""),
         home_location: String(data.profile?.home_location || ""),
+        home_lat:
+          data.profile?.home_lat === null || data.profile?.home_lat === undefined
+            ? ""
+            : String(data.profile.home_lat),
+        home_lng:
+          data.profile?.home_lng === null || data.profile?.home_lng === undefined
+            ? ""
+            : String(data.profile.home_lng),
         work_location: String(data.profile?.work_location || ""),
+        work_lat:
+          data.profile?.work_lat === null || data.profile?.work_lat === undefined
+            ? ""
+            : String(data.profile.work_lat),
+        work_lng:
+          data.profile?.work_lng === null || data.profile?.work_lng === undefined
+            ? ""
+            : String(data.profile.work_lng),
       });
     } catch (err) {
       const axiosError = err as AxiosError<{ message?: string }>;
@@ -90,6 +118,41 @@ export default function ProfilePage() {
         [field]: event.target.value,
       }));
     };
+
+  const handleMapConfirm = (
+    target: "home" | "work",
+    lat: number,
+    lng: number,
+    address: string,
+  ) => {
+    const latValue = lat.toFixed(6);
+    const lngValue = lng.toFixed(6);
+    const locationText = address.trim();
+
+    setProfile((previous) => {
+      if (target === "home") {
+        return {
+          ...previous,
+          home_lat: latValue,
+          home_lng: lngValue,
+          home_location:
+            locationText || previous.home_location || "Pinned home location",
+        };
+      }
+
+      return {
+        ...previous,
+        work_lat: latValue,
+        work_lng: lngValue,
+        work_location:
+          locationText || previous.work_location || "Pinned work location",
+      };
+    });
+
+    setActiveMapPicker(null);
+    setMessage("Location pinned from map.");
+    setError("");
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -114,12 +177,16 @@ export default function ProfilePage() {
     setIsSaving(true);
 
     try {
-      const payload: ProfileForm = {
+      const payload = {
         display_name: profile.display_name.trim(),
         email: profile.email.trim().toLowerCase(),
         phone_number: profile.phone_number.trim(),
         home_location: profile.home_location.trim(),
+        home_lat: profile.home_lat.trim() ? Number(profile.home_lat.trim()) : null,
+        home_lng: profile.home_lng.trim() ? Number(profile.home_lng.trim()) : null,
         work_location: profile.work_location.trim(),
+        work_lat: profile.work_lat.trim() ? Number(profile.work_lat.trim()) : null,
+        work_lng: profile.work_lng.trim() ? Number(profile.work_lng.trim()) : null,
       };
 
       const { data } = await api.patch("/api/profile", payload, {
@@ -133,7 +200,23 @@ export default function ProfilePage() {
         email: String(data.profile?.email || payload.email),
         phone_number: String(data.profile?.phone_number || payload.phone_number),
         home_location: String(data.profile?.home_location || payload.home_location),
+        home_lat:
+          data.profile?.home_lat === null || data.profile?.home_lat === undefined
+            ? ""
+            : String(data.profile.home_lat),
+        home_lng:
+          data.profile?.home_lng === null || data.profile?.home_lng === undefined
+            ? ""
+            : String(data.profile.home_lng),
         work_location: String(data.profile?.work_location || payload.work_location),
+        work_lat:
+          data.profile?.work_lat === null || data.profile?.work_lat === undefined
+            ? ""
+            : String(data.profile.work_lat),
+        work_lng:
+          data.profile?.work_lng === null || data.profile?.work_lng === undefined
+            ? ""
+            : String(data.profile.work_lng),
       });
       setMessage("Profile details saved.");
     } catch (err) {
@@ -236,8 +319,35 @@ export default function ProfilePage() {
                   value={profile.home_location}
                   onChange={handleFieldChange("home_location")}
                   className="w-full rounded-xl border border-white/30 bg-black/20 px-4 py-3 text-sm outline-none ring-cyan-300/60 transition focus:ring-2"
-                  placeholder="Neighborhood or address"
+                  placeholder="Address or place label"
                 />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveMapPicker("home")}
+                    className="rounded-full border border-cyan-200/60 bg-cyan-300/20 px-4 py-2 text-xs font-semibold transition hover:bg-cyan-300/30"
+                  >
+                    Pick on Map
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setProfile((previous) => ({
+                        ...previous,
+                        home_lat: "",
+                        home_lng: "",
+                      }))
+                    }
+                    className="rounded-full border border-white/40 px-4 py-2 text-xs font-semibold transition hover:bg-white/10"
+                  >
+                    Clear Pin
+                  </button>
+                </div>
+                {profile.home_lat && profile.home_lng ? (
+                  <p className="mt-2 text-xs text-cyan-200">
+                    Pinned: {profile.home_lat}, {profile.home_lng}
+                  </p>
+                ) : null}
               </div>
 
               <div>
@@ -253,8 +363,35 @@ export default function ProfilePage() {
                   value={profile.work_location}
                   onChange={handleFieldChange("work_location")}
                   className="w-full rounded-xl border border-white/30 bg-black/20 px-4 py-3 text-sm outline-none ring-cyan-300/60 transition focus:ring-2"
-                  placeholder="Office area or address"
+                  placeholder="Address or place label"
                 />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveMapPicker("work")}
+                    className="rounded-full border border-cyan-200/60 bg-cyan-300/20 px-4 py-2 text-xs font-semibold transition hover:bg-cyan-300/30"
+                  >
+                    Pick on Map
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setProfile((previous) => ({
+                        ...previous,
+                        work_lat: "",
+                        work_lng: "",
+                      }))
+                    }
+                    className="rounded-full border border-white/40 px-4 py-2 text-xs font-semibold transition hover:bg-white/10"
+                  >
+                    Clear Pin
+                  </button>
+                </div>
+                {profile.work_lat && profile.work_lng ? (
+                  <p className="mt-2 text-xs text-cyan-200">
+                    Pinned: {profile.work_lat}, {profile.work_lng}
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -280,6 +417,31 @@ export default function ProfilePage() {
           </form>
         )}
       </main>
+
+      {activeMapPicker === "home" ? (
+        <InteractiveLocationMap
+          isOpen
+          title="Pick Home Location"
+          initialLat={profile.home_lat ? Number(profile.home_lat) : null}
+          initialLng={profile.home_lng ? Number(profile.home_lng) : null}
+          onCancel={() => setActiveMapPicker(null)}
+          onConfirm={(point, address) =>
+            handleMapConfirm("home", point.lat, point.lng, address)
+          }
+        />
+      ) : null}
+      {activeMapPicker === "work" ? (
+        <InteractiveLocationMap
+          isOpen
+          title="Pick Work Location"
+          initialLat={profile.work_lat ? Number(profile.work_lat) : null}
+          initialLng={profile.work_lng ? Number(profile.work_lng) : null}
+          onCancel={() => setActiveMapPicker(null)}
+          onConfirm={(point, address) =>
+            handleMapConfirm("work", point.lat, point.lng, address)
+          }
+        />
+      ) : null}
     </div>
   );
 }
