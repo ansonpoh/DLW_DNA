@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 
 const reportTypes = [
   "Medical",
@@ -22,7 +22,7 @@ export default function ReportPage() {
   const [submittedCode, setSubmittedCode] = useState("");
   const [priority, setPriority] = useState<"Medium" | "High">("Medium");
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const generatedCode = `ASH-${Math.floor(1000 + Math.random() * 9000)}`;
     const estimatedPriority = happeningNow ? "High" : "Medium";

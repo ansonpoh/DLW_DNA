@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
 
 export default function RegisterPage() {
@@ -16,7 +16,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage("");
     setError("");
@@ -31,8 +31,8 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    if (password.length < 3) {
+      setError("Password must be at least 3 characters long.");
       return;
     }
 
@@ -124,7 +124,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="w-full rounded-xl border border-white/30 bg-black/20 px-4 py-3 text-sm outline-none ring-teal-300/60 transition focus:ring-2"
-              placeholder="At least 8 characters"
+              placeholder="At least 3 characters"
             />
           </div>
 

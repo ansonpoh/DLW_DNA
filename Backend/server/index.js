@@ -1,7 +1,10 @@
-const express = require("express");
-const cors = require("cors");
-require("dotenv").config();
-const { createClient } = require("@supabase/supabase-js");
+import { supabase, supabaseAdmin } from "./config/supabase.js";
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { PrismaClient } from "@prisma/client";
+
+dotenv.config();
 
 const app = express();
 
@@ -10,6 +13,7 @@ const CLIENT_URL = process.env.CLIENT_URL || "*";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY in environment variables.");
@@ -21,19 +25,14 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+if (!DATABASE_URL) {
+  console.error("Missing DATABASE_URL in environment variables.");
+  process.exit(1);
+}
 
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+
+const prisma = new PrismaClient();
+
 
 app.use(cors({ origin: CLIENT_URL === "*" ? true : CLIENT_URL }));
 app.use(express.json());
@@ -44,7 +43,7 @@ app.get("/", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
-}); 
+});
 
 app.post("/api/auth/register", async (req, res) => {
   const { name, email, password } = req.body;
@@ -62,9 +61,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 
   if (typeof password !== "string" || password.length < 3) {
-    return res
-      .status(400)
-      .json({ message: "Password must be at least 3 characters long." });
+    return res.status(400).json({ message: "Password must be at least 3 characters long." });
   }
 
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
@@ -88,18 +85,11 @@ app.post("/api/auth/register", async (req, res) => {
     });
   }
 
-  const { error: profileInsertError } = await supabaseAdmin
-    .schema("users")
-    .from("users")
-    .insert({
-      user_id: authUserId,
-      display_name: trimmedName,
-      email: trimmedEmail,
-    });
-
-  if (profileInsertError) {
+  try {
+    const profileInsertSql = `insert into users.users (supabase_id, display_name, email) values ($1::uuid, $2, $3)`;
+    await prisma.$executeRawUnsafe(profileInsertSql, authUserId, trimmedName, trimmedEmail);
+  } catch (profileInsertError) {
     await supabaseAdmin.auth.admin.deleteUser(authUserId);
-
     return res.status(500).json({
       message: `Account creation failed while saving profile: ${profileInsertError.message}`,
     });
@@ -129,9 +119,7 @@ app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res
-      .status(400)
-      .json({ message: "Email and password are required." });
+    return res.status(400).json({ message: "Email and password are required." });
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({
