@@ -13,7 +13,7 @@ copy .env.example .env
 ## Run
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 3011 --reload
+uvicorn main:app --host 0.0.0.0 --port 3011 --reload --env-file .env
 ```
 
 ## API
