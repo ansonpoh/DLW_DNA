@@ -15,6 +15,7 @@ class AccidentEvent(BaseModel):
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence_images: list[str] = Field(default_factory=list, max_length=3)
 
 
 class DetectionIngestResponse(BaseModel):

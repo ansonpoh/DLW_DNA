@@ -21,10 +21,17 @@ class Settings:
     yolo_conf_threshold: float = float(os.getenv("YOLO_CONF_THRESHOLD", "0.30"))
     yolo_device: str = os.getenv("YOLO_DEVICE", "cpu")
     yolo_vehicle_class_ids: str = os.getenv("YOLO_VEHICLE_CLASS_IDS", "2,3,5,7")
-    server_report_ingest_url: str = os.getenv(
-        "SERVER_REPORT_INGEST_URL", "http://localhost:3001/api/reports/detection"
+    evidence_frame_count: int = int(os.getenv("EVIDENCE_FRAME_COUNT", "2"))
+    evidence_jpeg_quality: int = int(os.getenv("EVIDENCE_JPEG_QUALITY", "75"))
+    evidence_image_max_width: int = int(os.getenv("EVIDENCE_IMAGE_MAX_WIDTH", "960"))
+    report_pipeline_ingest_url: str = (
+        os.getenv("REPORT_PIPELINE_INGEST_URL")
+        or os.getenv("SERVER_REPORT_INGEST_URL")
+        or "http://localhost:3012/api/ai-admin/ingest"
     )
-    server_detection_key: str = os.getenv("SERVER_DETECTION_KEY", "")
+    report_pipeline_key: str = (
+        os.getenv("REPORT_PIPELINE_KEY") or os.getenv("SERVER_DETECTION_KEY") or ""
+    )
     request_timeout_seconds: float = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "10"))
     email_notifications_enabled: bool = os.getenv("EMAIL_NOTIFICATIONS_ENABLED", "false").lower() == "true"
     email_smtp_host: str = os.getenv("EMAIL_SMTP_HOST", "")

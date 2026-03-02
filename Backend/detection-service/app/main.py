@@ -40,7 +40,7 @@ def _forward_event(event: AccidentEvent) -> int:
     if response.status_code >= 400:
         raise HTTPException(
             status_code=502,
-            detail=f"Main server rejected accident payload ({response.status_code}): {response.text}",
+            detail=f"Report pipeline rejected accident payload ({response.status_code}): {response.text}",
         )
     email_notifier.send_accident_email(event)
     return response.status_code

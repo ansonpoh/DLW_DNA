@@ -11,35 +11,15 @@ class ReportPublisher:
         self._session = requests.Session()
 
     def publish_accident(self, event: AccidentEvent) -> requests.Response:
-        if not settings.server_detection_key:
-            raise RuntimeError("SERVER_DETECTION_KEY is not configured.")
+        if not settings.report_pipeline_key:
+            raise RuntimeError("REPORT_PIPELINE_KEY is not configured.")
 
-        description = event.description or (
-            f"Accident-like motion detected by camera {event.camera_id} "
-            f"(confidence {event.confidence:.2f})."
-        )
-
-        payload = {
-            "type": "Accident",
-            "description": description,
-            "happening_now": True,
-            "safe_to_continue": False,
-            "location_label": event.location_label or f"Camera {event.camera_id}",
-            "location_source": "camera",
-            "latitude": event.latitude,
-            "longitude": event.longitude,
-            "priority": "High",
-            "status": "submitted",
-            "camera_id": event.camera_id,
-            "confidence": event.confidence,
-            "detected_at": event.detected_at.isoformat(),
-            "metadata": event.metadata,
-        }
+        payload = event.model_dump(mode="json")
 
         return self._session.post(
-            settings.server_report_ingest_url,
+            settings.report_pipeline_ingest_url,
             json=payload,
-            headers={"x-detection-key": settings.server_detection_key},
+            headers={"x-ai-admin-key": settings.report_pipeline_key},
             timeout=settings.request_timeout_seconds,
         )
 

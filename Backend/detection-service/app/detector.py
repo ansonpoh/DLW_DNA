@@ -4,6 +4,7 @@ import logging
 import math
 import threading
 import time
+import base64
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -190,6 +191,42 @@ def _run_motion_fallback(frame, bg_subtractor) -> tuple[float, dict[str, float |
     return confidence, metadata
 
 
+def _encode_jpeg_base64(frame) -> str | None:
+    width = int(frame.shape[1]) if len(frame.shape) >= 2 else 0
+    max_width = max(160, int(settings.evidence_image_max_width))
+    quality = min(95, max(40, int(settings.evidence_jpeg_quality)))
+
+    if width > max_width:
+        ratio = max_width / float(width)
+        height = int(frame.shape[0] * ratio)
+        frame = cv2.resize(frame, (max_width, max(1, height)), interpolation=cv2.INTER_AREA)
+
+    ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+    if not ok:
+        return None
+    return base64.b64encode(encoded.tobytes()).decode("ascii")
+
+
+def _build_evidence_images(prev_frame, current_frame) -> list[str]:
+    target_count = min(3, max(0, int(settings.evidence_frame_count)))
+    if target_count <= 0:
+        return []
+
+    candidates = []
+    if prev_frame is not None:
+        candidates.append(prev_frame)
+    candidates.append(current_frame)
+
+    encoded_images = []
+    for frame in candidates:
+        if len(encoded_images) >= target_count:
+            break
+        encoded = _encode_jpeg_base64(frame)
+        if encoded:
+            encoded_images.append(encoded)
+    return encoded_images
+
+
 def run_camera_detection_loop(on_detected: Callable[[AccidentEvent], None]) -> None:
     source = _parse_camera_source(settings.camera_source)
     cap = cv2.VideoCapture(source)
@@ -206,6 +243,7 @@ def run_camera_detection_loop(on_detected: Callable[[AccidentEvent], None]) -> N
     active_backend = "yolo-heuristic" if yolo_model is not None else "motion-fallback"
     last_emitted = 0.0
     prev_gray = None
+    prev_frame = None
     _update_status(
         running=True,
         started_at=_utc_now_iso(),
@@ -267,11 +305,14 @@ def run_camera_detection_loop(on_detected: Callable[[AccidentEvent], None]) -> N
                 confidence >= settings.accident_confidence_threshold
                 and now - last_emitted >= settings.detection_cooldown_seconds
             ):
+                evidence_images = _build_evidence_images(prev_frame, frame)
+                metadata["evidence_images_count"] = len(evidence_images)
                 event = AccidentEvent(
                     camera_id=settings.camera_id,
                     confidence=confidence,
                     detected_at=datetime.now(timezone.utc),
                     metadata=metadata,
+                    evidence_images=evidence_images,
                 )
                 on_detected(event)
                 with _status_lock:
@@ -285,6 +326,7 @@ def run_camera_detection_loop(on_detected: Callable[[AccidentEvent], None]) -> N
                     confidence,
                     active_backend,
                 )
+            prev_frame = frame.copy()
     except Exception as error:
         _update_status(last_error=str(error))
         logger.exception("Camera loop crashed: %s", error)

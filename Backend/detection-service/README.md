@@ -23,7 +23,7 @@ uvicorn main:app --host 0.0.0.0 --port 3011 --reload --env-file .env
 - `POST /api/detection/start-camera` with header `x-detection-admin-key`
 - `GET /api/detection/status` with header `x-detection-admin-key`
 
-`/api/detection/ingest` forwards accident payloads to `SERVER_REPORT_INGEST_URL`.
+`/api/detection/ingest` forwards accident payloads to `REPORT_PIPELINE_INGEST_URL` (AI admin service).
 
 ## Camera Detection (MVP)
 
@@ -43,6 +43,9 @@ YOLO_DEVICE=cpu
 YOLO_VEHICLE_CLASS_IDS=2,3,5,7
 ACCIDENT_CONFIDENCE_THRESHOLD=0.60
 DETECTION_COOLDOWN_SECONDS=20
+EVIDENCE_FRAME_COUNT=2
+EVIDENCE_JPEG_QUALITY=75
+EVIDENCE_IMAGE_MAX_WIDTH=960
 ```
 
 If YOLO is unavailable, the service falls back to the legacy motion-area detector.
