@@ -13,6 +13,8 @@ from .models import (
     AiEnrichmentResult,
     EnrichedAccidentReport,
     PipelineIngestResponse,
+    UserReportDraft,
+    UserReportEnrichmentResult,
 )
 from .server_client import publisher
 
@@ -187,3 +189,12 @@ def ingest_detection(
         severity=ai_review.get("severity", "Moderate"),
         used_ai=used_ai,
     )
+
+
+@app.post("/api/ai-admin/enrich-user-report", response_model=UserReportEnrichmentResult)
+def enrich_user_report(
+    draft: UserReportDraft,
+    x_ai_admin_key: str | None = Header(default=None),
+) -> UserReportEnrichmentResult:
+    _check_ingest_key(x_ai_admin_key)
+    return enricher.enrich_user_report(draft)

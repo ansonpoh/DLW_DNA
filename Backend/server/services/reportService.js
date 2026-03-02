@@ -1,5 +1,6 @@
 import { env } from "../config/env.js";
 import { prisma } from "../config/prisma.js";
+import { enrichUserReport } from "./aiAdminService.js";
 import { HttpError } from "../utils/httpError.js";
 
 const PROFILE_TABLE = "users.users";
@@ -296,6 +297,24 @@ export async function createReport(authUser, payload) {
 
   if (!reportInput.description) {
     throw new HttpError(400, "Report description is required.");
+  }
+
+  const aiEnrichment = await enrichUserReport({
+    type: reportInput.type,
+    description: reportInput.description,
+    happening_now: reportInput.happening_now,
+    safe_to_continue: reportInput.safe_to_continue,
+    location_label: reportInput.location_label,
+    location_source: reportInput.location_source || "manual",
+    latitude: reportInput.latitude,
+    longitude: reportInput.longitude,
+    priority: reportInput.priority || null,
+  });
+  if (aiEnrichment?.cleaned_description) {
+    reportInput.description = aiEnrichment.cleaned_description;
+  }
+  if (aiEnrichment?.priority) {
+    reportInput.priority = aiEnrichment.priority;
   }
 
   const profileUserId = await getProfileUserId(authUser.id);

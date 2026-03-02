@@ -6,7 +6,12 @@ from typing import Any
 from openai import OpenAI
 
 from .config import settings
-from .models import AccidentEvent, AiEnrichmentResult
+from .models import (
+    AccidentEvent,
+    AiEnrichmentResult,
+    UserReportDraft,
+    UserReportEnrichmentResult,
+)
 
 
 def _baseline_enrichment(event: AccidentEvent) -> AiEnrichmentResult:
@@ -37,6 +42,24 @@ def _baseline_enrichment(event: AccidentEvent) -> AiEnrichmentResult:
         happening_now=True,
         safe_to_continue=False if confidence >= 0.65 else True,
         validation_notes="Fallback heuristic used because AI enrichment is unavailable.",
+    )
+
+
+def _baseline_user_report_enrichment(draft: UserReportDraft) -> UserReportEnrichmentResult:
+    cleaned_description = draft.description.strip()
+    priority = draft.priority or ("High" if draft.happening_now else "Medium")
+    location = (draft.location_label or "").strip()
+    if location:
+        summary = f"{draft.type} report submitted near {location}."
+    else:
+        summary = f"{draft.type} report submitted."
+
+    return UserReportEnrichmentResult(
+        cleaned_description=cleaned_description,
+        summary=summary,
+        priority=priority,  # type: ignore[arg-type]
+        validation_notes="Fallback heuristic used because AI enrichment is unavailable.",
+        used_ai=False,
     )
 
 
@@ -118,6 +141,73 @@ class ReportEnricher:
             return enriched, True
         except Exception:
             return _baseline_enrichment(event), False
+
+    def enrich_user_report(self, draft: UserReportDraft) -> UserReportEnrichmentResult:
+        if not self._client:
+            return _baseline_user_report_enrichment(draft)
+
+        system_prompt = (
+            "You are an incident triage assistant for citizen-submitted safety reports. "
+            "Clean up text for clarity while preserving meaning. "
+            "Do not invent new facts, injuries, causes, suspect identities, or outcomes. "
+            "Assign priority conservatively based on urgency in the provided report only. "
+            "Output only valid JSON with keys: cleaned_description, summary, priority, validation_notes. "
+            "cleaned_description must be 1-3 sentences. "
+            "summary should be concise and factual. "
+            "priority must be one of Low, Medium, High, Critical."
+        )
+
+        user_payload: dict[str, Any] = {
+            "type": draft.type,
+            "description": draft.description,
+            "happening_now": draft.happening_now,
+            "safe_to_continue": draft.safe_to_continue,
+            "location_label": draft.location_label,
+            "location_source": draft.location_source,
+            "latitude": draft.latitude,
+            "longitude": draft.longitude,
+            "priority": draft.priority,
+        }
+
+        try:
+            response = self._client.responses.create(
+                model=settings.openai_model,
+                temperature=0,
+                max_output_tokens=220,
+                input=[
+                    {
+                        "role": "system",
+                        "content": [{"type": "input_text", "text": system_prompt}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": (
+                                    "Enrich and validate this user safety report:\n"
+                                    + json.dumps(user_payload, ensure_ascii=True)
+                                ),
+                            }
+                        ],
+                    },
+                ],
+                timeout=settings.openai_timeout_seconds,
+            )
+            raw_output = response.output_text.strip()
+            parsed = json.loads(raw_output)
+            enriched = UserReportEnrichmentResult.model_validate(
+                {
+                    "cleaned_description": parsed.get("cleaned_description"),
+                    "summary": parsed.get("summary"),
+                    "priority": parsed.get("priority"),
+                    "validation_notes": parsed.get("validation_notes"),
+                    "used_ai": True,
+                }
+            )
+            return enriched
+        except Exception:
+            return _baseline_user_report_enrichment(draft)
 
 
 enricher = ReportEnricher()

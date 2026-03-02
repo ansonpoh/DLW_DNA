@@ -48,6 +48,26 @@ class AiEnrichmentResult(BaseModel):
     validation_notes: str = Field(min_length=1, max_length=500)
 
 
+class UserReportDraft(BaseModel):
+    type: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=1500)
+    happening_now: bool = True
+    safe_to_continue: bool = True
+    location_label: str | None = Field(default=None, max_length=200)
+    location_source: str | None = Field(default=None, max_length=60)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    priority: Priority | None = None
+
+
+class UserReportEnrichmentResult(BaseModel):
+    cleaned_description: str = Field(min_length=1, max_length=1200)
+    summary: str = Field(min_length=1, max_length=280)
+    priority: Priority
+    validation_notes: str = Field(min_length=1, max_length=500)
+    used_ai: bool
+
+
 class PipelineIngestResponse(BaseModel):
     message: str
     server_status: int

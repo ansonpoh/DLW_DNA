@@ -29,3 +29,4 @@ uvicorn main:app --host 0.0.0.0 --port 3012 --reload --env-file .env
 
 - `GET /health`
 - `POST /api/ai-admin/ingest` with header `x-ai-admin-key`
+- `POST /api/ai-admin/enrich-user-report` with header `x-ai-admin-key`

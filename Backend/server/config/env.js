@@ -32,4 +32,10 @@ export const env = {
     process.env.DEFAULT_POSTAL_COUNTRY_CODE || "sg",
   DETECTION_INGEST_KEY: String(process.env.DETECTION_INGEST_KEY || "").trim(),
   DETECTION_REPORT_USER_ID: String(process.env.DETECTION_REPORT_USER_ID || "").trim(),
+  AI_ADMIN_ENRICH_URL: String(
+    process.env.AI_ADMIN_ENRICH_URL ||
+      "http://localhost:3012/api/ai-admin/enrich-user-report",
+  ).trim(),
+  AI_ADMIN_KEY: String(process.env.AI_ADMIN_KEY || "").trim(),
+  AI_ADMIN_TIMEOUT_MS: Number(process.env.AI_ADMIN_TIMEOUT_MS || 8000),
 };
