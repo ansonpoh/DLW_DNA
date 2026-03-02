@@ -9,9 +9,13 @@ services:
     environment:
       PORT: "3001"
       AI_ADMIN_ENRICH_URL: http://ai-admin-service:3012/api/ai-admin/enrich-user-report
+      STT_SERVICE_TRANSCRIBE_URL: http://stt-service:3013/api/stt/transcribe
     ports:
       - "3001:3001"
     restart: unless-stopped
+    depends_on:
+      stt-service:
+        condition: service_started
 
   ai-admin-service:
     build:
@@ -46,3 +50,17 @@ services:
     depends_on:
       ai-admin-service:
         condition: service_started
+
+  stt-service:
+    build:
+      context: ./stt-service
+      dockerfile: Dockerfile
+    container_name: dlw-stt
+    env_file:
+      - ./stt-service/.env
+    environment:
+      PORT: "3013"
+      SERVER_REPORT_INGEST_URL: http://server:3001/api/reports/detection
+    ports:
+      - "3013:3013"
+    restart: unless-stopped

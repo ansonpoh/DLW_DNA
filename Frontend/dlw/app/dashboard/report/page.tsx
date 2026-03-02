@@ -37,6 +37,14 @@ type MediaAnalysis = {
   metadata?: Record<string, unknown>;
 };
 
+type TranscriptionPreview = {
+  text: string;
+  language: string;
+  language_probability: number;
+  duration_seconds: number;
+  model: string;
+};
+
 const incidentTypeToReportType: Record<string, string> = {
   traffic_accident: "Accident/Traffic",
   pedestrian_vehicle_conflict: "Accident/Traffic",
@@ -55,10 +63,13 @@ export default function ReportPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isAnalyzingMedia, setIsAnalyzingMedia] = useState(false);
   const [mediaError, setMediaError] = useState("");
   const [mediaAnalysis, setMediaAnalysis] = useState<MediaAnalysis | null>(null);
   const [aiGuidance, setAiGuidance] = useState<AiGuidance | null>(null);
+  const [transcriptionPreview, setTranscriptionPreview] =
+    useState<TranscriptionPreview | null>(null);
   const [profileLocations, setProfileLocations] = useState<
     Array<{
       key: "home" | "work";
@@ -275,9 +286,11 @@ export default function ReportPage() {
     setSubmitError("");
     setSubmitted(false);
     setAiGuidance(null);
+    setTranscriptionPreview(null);
 
-    if (!description.trim()) {
-      setSubmitError("Please describe what happened before submitting.");
+    const hasAudio = Boolean(audioFile);
+    if (!hasAudio && !description.trim()) {
+      setSubmitError("Please describe what happened or attach an audio clip.");
       return;
     }
 
@@ -296,23 +309,51 @@ export default function ReportPage() {
     setIsSubmitting(true);
 
     try {
-      const payload = {
-        type: selectedType,
-        description: description.trim(),
-        happening_now: happeningNow,
-        safe_to_continue: safeToContinue,
-        location_label: locationLabel,
-        location_source: selectedLocation.source,
-        latitude: selectedLocation.lat,
-        longitude: selectedLocation.lng,
-        priority: estimatedPriority,
-      };
+      let data: any;
+      if (hasAudio && audioFile) {
+        const form = new FormData();
+        form.set("audio", audioFile);
+        form.set("type", selectedType);
+        form.set("happening_now", String(happeningNow));
+        form.set("safe_to_continue", String(safeToContinue));
+        form.set("location_label", locationLabel);
+        form.set("latitude", selectedLocation.lat === null ? "" : String(selectedLocation.lat));
+        form.set("longitude", selectedLocation.lng === null ? "" : String(selectedLocation.lng));
+        form.set("priority", estimatedPriority);
+        form.set("source_id", "FRONTEND-AUDIO-UPLOAD");
 
-      const { data } = await api.post("/api/reports", payload, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+        const response = await fetch(`${api.defaults.baseURL}/api/reports/audio`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: form,
+        });
+
+        data = await response.json();
+        if (!response.ok) {
+          throw new Error(String((data as { message?: string })?.message || ""));
+        }
+      } else {
+        const payload = {
+          type: selectedType,
+          description: description.trim(),
+          happening_now: happeningNow,
+          safe_to_continue: safeToContinue,
+          location_label: locationLabel,
+          location_source: selectedLocation.source,
+          latitude: selectedLocation.lat,
+          longitude: selectedLocation.lng,
+          priority: estimatedPriority,
+        };
+
+        const response = await api.post("/api/reports", payload, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        data = response.data;
+      }
 
       const guidanceSource = data?.ai_guidance;
       if (guidanceSource && typeof guidanceSource === "object") {
@@ -331,12 +372,23 @@ export default function ReportPage() {
           next_steps: parsedSteps,
         });
       }
+      const transcriptionSource = data?.transcription;
+      if (transcriptionSource?.text) {
+        setTranscriptionPreview({
+          text: String(transcriptionSource.text || "").trim(),
+          language: String(transcriptionSource.language || "").trim(),
+          language_probability: Number(transcriptionSource.language_probability || 0),
+          duration_seconds: Number(transcriptionSource.duration_seconds || 0),
+          model: String(transcriptionSource.model || "").trim(),
+        });
+      }
 
       setSubmitted(true);
       setDescription("");
+      setAudioFile(null);
     } catch (err) {
       const axiosError = err as AxiosError<{ message?: string }>;
-      const apiMessage = axiosError.response?.data?.message;
+      const apiMessage = axiosError.response?.data?.message || (err instanceof Error ? err.message : "");
       setSubmitError(apiMessage || "Unable to submit report right now.");
     } finally {
       setIsSubmitting(false);
@@ -459,10 +511,26 @@ export default function ReportPage() {
               <textarea
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="Describe what is happening"
+                placeholder="Describe what is happening (optional if audio is attached)"
                 className="mt-3 min-h-28 w-full rounded-lg border border-white/25 bg-white/5 p-3 text-sm text-slate-100 outline-none ring-teal-300/60 transition focus:ring-2"
               />
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="rounded-lg border border-teal-200/35 bg-teal-200/10 p-3 text-sm text-teal-50">
+                  Optional: Upload voice note (STT)
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={(event) => {
+                      const chosen = event.target.files?.[0] || null;
+                      setAudioFile(chosen);
+                      setSubmitError("");
+                    }}
+                    className="mt-2 block w-full text-xs"
+                  />
+                  <p className="mt-2 text-xs text-teal-100/90">
+                    If attached, this report is transcribed by AI and you will see transcript confirmation after submit.
+                  </p>
+                </label>
                 <label className="rounded-lg border border-white/20 bg-white/5 p-3 text-sm text-slate-200">
                   Optional: Upload image/video for AI incident detection
                   <input
@@ -489,6 +557,11 @@ export default function ReportPage() {
                   </button>
                 </div>
               </div>
+              {audioFile ? (
+                <div className="mt-3 rounded-lg border border-teal-200/40 bg-teal-200/10 p-3 text-xs text-teal-50">
+                  Voice note selected: <span className="font-semibold">{audioFile.name}</span>
+                </div>
+              ) : null}
               {mediaError ? (
                 <p className="mt-3 rounded-lg border border-rose-200/40 bg-rose-400/20 p-3 text-sm text-rose-50">
                   {mediaError}
@@ -673,6 +746,20 @@ export default function ReportPage() {
                           ))}
                         </ul>
                       ) : null}
+                    </div>
+                  ) : null}
+                  {transcriptionPreview ? (
+                    <div className="rounded-lg border border-teal-100/40 bg-teal-200/15 p-3 text-teal-50">
+                      <p className="font-semibold">Transcription confirmation</p>
+                      <p className="mt-2 rounded-md border border-teal-200/35 bg-teal-100/10 p-2 text-xs text-teal-50">
+                        "{transcriptionPreview.text}"
+                      </p>
+                      <p className="mt-2 text-xs text-teal-100/90">
+                        Language: {transcriptionPreview.language || "unknown"}
+                        {" | "}Confidence: {transcriptionPreview.language_probability.toFixed(2)}
+                        {" | "}Duration: {transcriptionPreview.duration_seconds.toFixed(1)}s
+                        {" | "}Model: {transcriptionPreview.model || "-"}
+                      </p>
                     </div>
                   ) : null}
                   <Link

@@ -38,4 +38,9 @@ export const env = {
   ).trim(),
   AI_ADMIN_KEY: String(process.env.AI_ADMIN_KEY || "").trim(),
   AI_ADMIN_TIMEOUT_MS: Number(process.env.AI_ADMIN_TIMEOUT_MS || 8000),
+  STT_SERVICE_TRANSCRIBE_URL: String(
+    process.env.STT_SERVICE_TRANSCRIBE_URL || "http://localhost:3013/api/stt/transcribe",
+  ).trim(),
+  STT_SERVICE_KEY: String(process.env.STT_SERVICE_KEY || "").trim(),
+  STT_SERVICE_TIMEOUT_MS: Number(process.env.STT_SERVICE_TIMEOUT_MS || 20000),
 };
