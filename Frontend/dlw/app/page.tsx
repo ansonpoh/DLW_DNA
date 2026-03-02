@@ -6,6 +6,12 @@ export default function Home() {
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 py-12 sm:px-10 lg:py-16">
         <section className="flex justify-end gap-3">
           <Link
+            href="/admin/login"
+            className="inline-flex items-center justify-center rounded-full border border-amber-200/60 bg-amber-300/20 px-5 py-2 text-sm font-semibold text-amber-50 transition hover:bg-amber-300/30"
+          >
+            Admin Login
+          </Link>
+          <Link
             href="/login"
             className="inline-flex items-center justify-center rounded-full border border-white/40 bg-white/10 px-5 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
           >

@@ -21,6 +21,8 @@ const REPORT_COLUMN_CANDIDATES = {
   longitude: ["longitude", "lng", "lon"],
   status: ["status"],
   priority: ["priority"],
+  admin_notes: ["admin_notes", "internal_notes"],
+  updated_at: ["updated_at"],
 };
 
 function normalizeCreateReportPayload(payload) {
@@ -55,6 +57,27 @@ function normalizeCreateDetectionPayload(payload) {
     camera_id: String(payload?.camera_id || "").trim(),
     confidence: payload?.confidence,
     detected_at: String(payload?.detected_at || "").trim(),
+  };
+}
+
+function normalizeAdminUpdatePayload(payload) {
+  const nextStatus = payload?.status;
+  const nextPriority = payload?.priority;
+  const nextAdminNotes = payload?.admin_notes;
+
+  return {
+    status:
+      nextStatus === undefined || nextStatus === null
+        ? undefined
+        : String(nextStatus).trim(),
+    priority:
+      nextPriority === undefined || nextPriority === null
+        ? undefined
+        : String(nextPriority).trim(),
+    admin_notes:
+      nextAdminNotes === undefined || nextAdminNotes === null
+        ? undefined
+        : String(nextAdminNotes).trim(),
   };
 }
 
@@ -209,9 +232,10 @@ function toJsonSafeValue(value) {
   return value;
 }
 
-function shapeReportResponse(row, mapping) {
+function shapeReportResponse(row, mapping, options = {}) {
+  const includeAdminFields = options.includeAdminFields === true;
   const reportId = toJsonSafeValue(row?.report_id ?? null);
-  return {
+  const base = {
     report_id: reportId,
     type: mapping.type ? row?.[mapping.type] ?? "" : "",
     description: mapping.description ? row?.[mapping.description] ?? "" : "",
@@ -226,6 +250,16 @@ function shapeReportResponse(row, mapping) {
     priority: mapping.priority ? row?.[mapping.priority] ?? DEFAULT_PRIORITY : DEFAULT_PRIORITY,
     status: mapping.status ? row?.[mapping.status] ?? DEFAULT_STATUS : DEFAULT_STATUS,
     created_at: toJsonSafeValue(row?.created_at ?? null),
+  };
+
+  if (!includeAdminFields) {
+    return base;
+  }
+
+  return {
+    ...base,
+    admin_notes: mapping.admin_notes ? row?.[mapping.admin_notes] ?? "" : "",
+    updated_at: mapping.updated_at ? toJsonSafeValue(row?.[mapping.updated_at] ?? null) : null,
   };
 }
 
@@ -297,5 +331,92 @@ export async function listOwnReports(authUser) {
 
   return {
     reports: rows.map((row) => shapeReportResponse(row, mapping)),
+  };
+}
+
+export async function listAllReportsForAdmin() {
+  const mapping = await getReportColumnMapping();
+  const selectColumns = buildSelectColumns(mapping);
+  const listSql = `
+    select ${selectColumns.join(", ")}
+    from ${REPORTS_TABLE}
+    order by created_at desc nulls last, report_id desc
+    limit 200
+  `;
+  const rows = await prisma.$queryRawUnsafe(listSql);
+
+  return {
+    reports: rows.map((row) =>
+      shapeReportResponse(row, mapping, { includeAdminFields: true }),
+    ),
+  };
+}
+
+export async function updateReportForAdmin(reportId, payload) {
+  const normalizedReportId = String(reportId || "").trim();
+  if (!normalizedReportId) {
+    throw new HttpError(400, "Report ID is required.");
+  }
+
+  const updateInput = normalizeAdminUpdatePayload(payload);
+  const mapping = await getReportColumnMapping();
+  const assignments = [];
+  const values = [];
+  let index = 1;
+
+  if (updateInput.status !== undefined) {
+    if (!mapping.status) {
+      throw new HttpError(400, "Report status updates are not supported by current schema.");
+    }
+    assignments.push(`${mapping.status} = $${index}`);
+    values.push(updateInput.status || DEFAULT_STATUS);
+    index += 1;
+  }
+
+  if (updateInput.priority !== undefined) {
+    if (!mapping.priority) {
+      throw new HttpError(400, "Report priority updates are not supported by current schema.");
+    }
+    assignments.push(`${mapping.priority} = $${index}`);
+    values.push(updateInput.priority || DEFAULT_PRIORITY);
+    index += 1;
+  }
+
+  if (updateInput.admin_notes !== undefined) {
+    if (!mapping.admin_notes) {
+      throw new HttpError(400, "Admin notes are not supported by current schema.");
+    }
+    assignments.push(`${mapping.admin_notes} = $${index}`);
+    values.push(updateInput.admin_notes);
+    index += 1;
+  }
+
+  if (!assignments.length) {
+    throw new HttpError(400, "At least one field must be provided for update.");
+  }
+
+  if (mapping.updated_at) {
+    assignments.push(`${mapping.updated_at} = now()`);
+  }
+
+  const selectColumns = buildSelectColumns(mapping);
+  const updateSql = `
+    update ${REPORTS_TABLE}
+    set ${assignments.join(", ")}
+    where report_id::text = $${index}
+    returning ${selectColumns.join(", ")}
+  `;
+
+  values.push(normalizedReportId);
+  const rows = await prisma.$queryRawUnsafe(updateSql, ...values);
+  const updated = rows?.[0];
+
+  if (!updated) {
+    throw new HttpError(404, "Report not found.");
+  }
+
+  return {
+    message: "Report updated successfully.",
+    report: shapeReportResponse(updated, mapping, { includeAdminFields: true }),
   };
 }

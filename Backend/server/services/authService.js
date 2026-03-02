@@ -1,5 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
+import { isSupabaseUserAdmin } from "./adminService.js";
 import { HttpError } from "../utils/httpError.js";
 
 export async function registerUser(payload) {
@@ -99,6 +100,33 @@ export async function loginUser(payload) {
       message: "Login successful.",
       user: data.user,
       session: data.session,
+    },
+  };
+}
+
+export async function loginAdminUser(payload) {
+  const loginResult = await loginUser(payload);
+  const userId = loginResult?.body?.user?.id;
+
+  if (!userId) {
+    throw new HttpError(401, "Unable to validate admin account.");
+  }
+
+  const isAdmin = await isSupabaseUserAdmin(userId);
+
+  if (!isAdmin) {
+    throw new HttpError(403, "This account does not have admin access.");
+  }
+
+  return {
+    ...loginResult,
+    body: {
+      ...loginResult.body,
+      user: {
+        ...loginResult.body.user,
+        role: "admin",
+        is_admin: true,
+      },
     },
   };
 }
