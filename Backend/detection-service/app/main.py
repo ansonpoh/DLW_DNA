@@ -3,12 +3,12 @@ from __future__ import annotations
 import logging
 import threading
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .detector import get_detector_status, run_camera_detection_loop
-from .models import AccidentEvent, DetectionIngestResponse
+from .detector import analyze_media_bytes, get_detector_status, run_camera_detection_loop
+from .models import AccidentEvent, DetectionIngestResponse, IncidentAnalysisResponse
 from .notifier import email_notifier
 from .server_client import publisher
 
@@ -94,6 +94,58 @@ def start_camera(
         logger.info("Camera detection loop start requested.")
         return JSONResponse(status_code=202, content={"message": "Camera detection loop started."})
     return JSONResponse(status_code=200, content={"message": "Camera detection loop is already running."})
+
+
+@app.post("/api/detection/analyze-media", response_model=IncidentAnalysisResponse)
+async def analyze_media(
+    media: UploadFile = File(...),
+    source_id: str = Form(default=settings.camera_id),
+    location_label: str | None = Form(default=None),
+    latitude: float | None = Form(default=None),
+    longitude: float | None = Form(default=None),
+    forward_event: bool = Form(default=True),
+    x_detection_key: str | None = Header(default=None),
+) -> IncidentAnalysisResponse:
+    _check_ingest_key(x_detection_key)
+    payload = await media.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        analysis = analyze_media_bytes(media.filename or "upload.bin", payload)
+    except RuntimeError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    event_forwarded = False
+    server_status: int | None = None
+
+    if forward_event and analysis.confidence >= settings.incident_confidence_threshold:
+        metadata = dict(analysis.metadata)
+        metadata["incident_type"] = analysis.incident_type
+        metadata["source_filename"] = media.filename or "uploaded-media"
+        event = AccidentEvent(
+            camera_id=source_id,
+            confidence=analysis.confidence,
+            description=f"Inferred incident type: {analysis.incident_type}",
+            location_label=location_label,
+            latitude=latitude,
+            longitude=longitude,
+            metadata=metadata,
+            evidence_images=analysis.evidence_images,
+        )
+        server_status = _forward_event(event)
+        event_forwarded = True
+
+    return IncidentAnalysisResponse(
+        message="Media analyzed successfully.",
+        incident_type=analysis.incident_type,
+        confidence=analysis.confidence,
+        model_backend=analysis.model_backend,
+        frames_analyzed=analysis.frames_analyzed,
+        event_forwarded=event_forwarded,
+        server_status=server_status,
+        metadata=analysis.metadata,
+    )
 
 
 @app.get("/api/detection/status")

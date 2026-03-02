@@ -20,10 +20,20 @@ uvicorn main:app --host 0.0.0.0 --port 3011 --reload --env-file .env
 
 - `GET /health`
 - `POST /api/detection/ingest` with header `x-detection-key`
+- `POST /api/detection/analyze-media` with header `x-detection-key` (multipart file upload)
 - `POST /api/detection/start-camera` with header `x-detection-admin-key`
 - `GET /api/detection/status` with header `x-detection-admin-key`
 
 `/api/detection/ingest` forwards accident payloads to `REPORT_PIPELINE_INGEST_URL` (AI admin service).
+
+`/api/detection/analyze-media` accepts an uploaded image or video (`media`) and infers an incident type using the detector model + heuristics. If confidence is above threshold, it can forward a compatible event payload to the report pipeline.
+
+Example form fields for `/api/detection/analyze-media`:
+- `media` (required): image/video file
+- `source_id` (optional): defaults to `CAMERA_ID`
+- `location_label` (optional)
+- `latitude` / `longitude` (optional)
+- `forward_event` (optional, default `true`)
 
 ## Camera Detection (MVP)
 
@@ -46,6 +56,9 @@ DETECTION_COOLDOWN_SECONDS=20
 EVIDENCE_FRAME_COUNT=2
 EVIDENCE_JPEG_QUALITY=75
 EVIDENCE_IMAGE_MAX_WIDTH=960
+VIDEO_SAMPLE_EVERY_N_FRAMES=5
+VIDEO_MAX_FRAMES_ANALYZED=48
+INCIDENT_CONFIDENCE_THRESHOLD=0.55
 ```
 
 If YOLO is unavailable, the service falls back to the legacy motion-area detector.

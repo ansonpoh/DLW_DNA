@@ -16,6 +16,19 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Environment
+
+Create/update `Frontend/dlw/.env` with:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3001
+DETECTION_SERVICE_BASE_URL=http://localhost:3011
+DETECTION_INGEST_KEY=your_detection_ingest_key
+```
+
+`DETECTION_INGEST_KEY` is read on the Next.js server only through the internal route:
+- `POST /api/detection/analyze-media` (proxy to detection-service)
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

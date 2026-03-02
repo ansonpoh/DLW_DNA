@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import base64
 import logging
 import math
+import os
+import tempfile
 import threading
 import time
-import base64
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 
 import cv2
+import numpy as np
 
 from .config import settings
 from .models import AccidentEvent
@@ -225,6 +229,207 @@ def _build_evidence_images(prev_frame, current_frame) -> list[str]:
         if encoded:
             encoded_images.append(encoded)
     return encoded_images
+
+
+@dataclass(frozen=True)
+class IncidentAnalysisResult:
+    incident_type: str
+    confidence: float
+    model_backend: str
+    frames_analyzed: int
+    metadata: dict[str, Any]
+    evidence_images: list[str]
+
+
+def _analyze_single_frame(frame, yolo_model, prev_gray) -> tuple[float, int, int, float, dict[str, Any]]:
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    motion_ratio = _motion_ratio(prev_gray, gray)
+    if yolo_model is None:
+        score, fallback_meta = _run_motion_fallback(frame, cv2.createBackgroundSubtractorMOG2(history=80))
+        return score, 0, 0, motion_ratio, fallback_meta
+
+    yolo_class_ids = _parse_class_ids(settings.yolo_vehicle_class_ids)
+    result = yolo_model.predict(
+        source=frame,
+        conf=settings.yolo_conf_threshold,
+        device=settings.yolo_device,
+        verbose=False,
+    )[0]
+    boxes = result.boxes or []
+    vehicle_boxes_xyxy: list[tuple[float, float, float, float]] = []
+    person_count = 0
+    class_counts: dict[str, int] = {}
+
+    for box in boxes:
+        class_id = int(box.cls[0].item())
+        class_name = result.names.get(class_id, str(class_id))
+        class_counts[class_name] = int(class_counts.get(class_name, 0)) + 1
+        if class_id == settings.yolo_person_class_id:
+            person_count += 1
+        if class_id in yolo_class_ids:
+            vehicle_boxes_xyxy.append(_to_xyxy(box))
+
+    collision_score, collision_meta = _heuristic_confidence(
+        boxes_xyxy=vehicle_boxes_xyxy,
+        frame_shape=frame.shape,
+        motion_ratio=motion_ratio,
+    )
+    metadata = {
+        "detector_backend": "yolo-incident-heuristic",
+        "vehicle_count": len(vehicle_boxes_xyxy),
+        "person_count": person_count,
+        "class_counts": class_counts,
+        **collision_meta,
+    }
+    return collision_score, len(vehicle_boxes_xyxy), person_count, motion_ratio, metadata
+
+
+def _classify_incident(
+    *,
+    peak_collision_score: float,
+    peak_vehicle_count: int,
+    peak_person_count: int,
+    avg_motion_ratio: float,
+) -> tuple[str, float]:
+    if peak_collision_score >= settings.accident_confidence_threshold and peak_vehicle_count >= 2:
+        return "traffic_accident", peak_collision_score
+    if peak_vehicle_count >= 1 and peak_person_count >= 1 and peak_collision_score >= 0.40:
+        return "pedestrian_vehicle_conflict", min(1.0, peak_collision_score + 0.10)
+    if peak_person_count >= 4 and peak_vehicle_count == 0 and avg_motion_ratio >= 0.03:
+        return "crowd_disturbance", min(1.0, 0.55 + avg_motion_ratio)
+    if peak_vehicle_count >= 1 and peak_collision_score < 0.30:
+        return "vehicle_stoppage_or_breakdown", min(0.85, 0.45 + (avg_motion_ratio * 3.0))
+    return "no_clear_incident", max(0.20, peak_collision_score)
+
+
+def _iter_video_frames(path: str):
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise RuntimeError("Unable to open uploaded video for analysis.")
+    try:
+        frame_index = 0
+        sampled = 0
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            should_sample = (frame_index % max(1, settings.video_sample_every_n_frames)) == 0
+            frame_index += 1
+            if not should_sample:
+                continue
+            sampled += 1
+            if sampled > max(1, settings.video_max_frames_analyzed):
+                break
+            yield frame
+    finally:
+        cap.release()
+
+
+def analyze_media_bytes(filename: str, payload: bytes) -> IncidentAnalysisResult:
+    yolo_model = _build_yolo_detector()
+    backend = "yolo-incident-heuristic" if yolo_model is not None else "motion-fallback"
+    suffix = os.path.splitext(filename.lower())[1]
+    is_video = suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mpeg", ".mpg"}
+
+    frames: list[Any] = []
+    if is_video:
+        with tempfile.NamedTemporaryFile(suffix=suffix or ".mp4", delete=False) as handle:
+            handle.write(payload)
+            temp_path = handle.name
+        try:
+            for frame in _iter_video_frames(temp_path):
+                frames.append(frame)
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+    else:
+        raw = np.frombuffer(payload, dtype=np.uint8)
+        frame = cv2.imdecode(raw, cv2.IMREAD_COLOR)
+        if frame is None:
+            raise RuntimeError("Unable to decode uploaded image.")
+        frames.append(frame)
+
+    if not frames:
+        raise RuntimeError("No analyzable frames found in uploaded media.")
+
+    peak_collision_score = 0.0
+    peak_vehicle_count = 0
+    peak_person_count = 0
+    motion_samples: list[float] = []
+    aggregate_class_counts: dict[str, int] = {}
+    frame_telemetry: list[dict[str, Any]] = []
+    prev_gray = None
+
+    for frame in frames:
+        score, vehicle_count, person_count, motion_ratio, telemetry = _analyze_single_frame(
+            frame=frame,
+            yolo_model=yolo_model,
+            prev_gray=prev_gray,
+        )
+        prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        peak_collision_score = max(peak_collision_score, score)
+        peak_vehicle_count = max(peak_vehicle_count, vehicle_count)
+        peak_person_count = max(peak_person_count, person_count)
+        motion_samples.append(motion_ratio)
+
+        class_counts = telemetry.get("class_counts", {})
+        if isinstance(class_counts, dict):
+            for class_name, count in class_counts.items():
+                aggregate_class_counts[str(class_name)] = int(
+                    aggregate_class_counts.get(str(class_name), 0)
+                ) + int(count)
+
+        frame_telemetry.append(
+            {
+                "vehicle_count": vehicle_count,
+                "person_count": person_count,
+                "collision_score": round(score, 4),
+                "motion_ratio": round(motion_ratio, 4),
+            }
+        )
+
+    avg_motion_ratio = sum(motion_samples) / float(max(len(motion_samples), 1))
+    incident_type, incident_confidence = _classify_incident(
+        peak_collision_score=peak_collision_score,
+        peak_vehicle_count=peak_vehicle_count,
+        peak_person_count=peak_person_count,
+        avg_motion_ratio=avg_motion_ratio,
+    )
+
+    metadata: dict[str, Any] = {
+        "detector_backend": backend,
+        "model": settings.yolo_model_path if yolo_model is not None else "motion-fallback",
+        "source_media_type": "video" if is_video else "image",
+        "frames_analyzed": len(frames),
+        "video_sample_every_n_frames": settings.video_sample_every_n_frames if is_video else None,
+        "peak_collision_score": round(peak_collision_score, 4),
+        "peak_vehicle_count": peak_vehicle_count,
+        "peak_person_count": peak_person_count,
+        "avg_motion_ratio": round(avg_motion_ratio, 4),
+        "class_counts": aggregate_class_counts,
+        "incident_type": incident_type,
+        "frame_telemetry": frame_telemetry[:8],
+        "limitation_note": (
+            "This endpoint infers incident type from YOLO object detections and motion heuristics."
+        ),
+    }
+
+    evidence_images = _build_evidence_images(
+        frames[0] if len(frames) > 1 else None,
+        frames[-1],
+    )
+    metadata["evidence_images_count"] = len(evidence_images)
+
+    return IncidentAnalysisResult(
+        incident_type=incident_type,
+        confidence=max(0.0, min(incident_confidence, 1.0)),
+        model_backend=backend,
+        frames_analyzed=len(frames),
+        metadata=metadata,
+        evidence_images=evidence_images,
+    )
 
 
 def run_camera_detection_loop(on_detected: Callable[[AccidentEvent], None]) -> None:

@@ -4,3 +4,4 @@ requests==2.32.4
 opencv-python==4.11.0.86
 python-dotenv==1.0.1
 ultralytics==8.3.170
+python-multipart==0.0.20

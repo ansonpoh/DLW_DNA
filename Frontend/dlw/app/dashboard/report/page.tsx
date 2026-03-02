@@ -26,6 +26,24 @@ type AiGuidance = {
   next_steps: string[];
 };
 
+type MediaAnalysis = {
+  message: string;
+  incident_type: string;
+  confidence: number;
+  model_backend: string;
+  frames_analyzed: number;
+  event_forwarded: boolean;
+  server_status: number | null;
+  metadata?: Record<string, unknown>;
+};
+
+const incidentTypeToReportType: Record<string, string> = {
+  traffic_accident: "Accident/Traffic",
+  pedestrian_vehicle_conflict: "Accident/Traffic",
+  crowd_disturbance: "Violence/Fight",
+  vehicle_stoppage_or_breakdown: "Accident/Traffic",
+};
+
 export default function ReportPage() {
   const router = useRouter();
   const [selectedType, setSelectedType] = useState("Medical");
@@ -36,6 +54,10 @@ export default function ReportPage() {
   const [accessToken, setAccessToken] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [isAnalyzingMedia, setIsAnalyzingMedia] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const [mediaAnalysis, setMediaAnalysis] = useState<MediaAnalysis | null>(null);
   const [aiGuidance, setAiGuidance] = useState<AiGuidance | null>(null);
   const [profileLocations, setProfileLocations] = useState<
     Array<{
@@ -321,6 +343,60 @@ export default function ReportPage() {
     }
   };
 
+  const handleAnalyzeMedia = async () => {
+    setMediaError("");
+    setMediaAnalysis(null);
+
+    if (!mediaFile) {
+      setMediaError("Please attach an image or video first.");
+      return;
+    }
+
+    setIsAnalyzingMedia(true);
+    try {
+      const form = new FormData();
+      form.set("media", mediaFile);
+      form.set("forward_event", "false");
+      form.set("source_id", "USER-UPLOAD");
+
+      const locationLabel = selectedLocation.label.trim() || manualLocationInput.trim();
+      if (locationLabel) {
+        form.set("location_label", locationLabel);
+      }
+      if (selectedLocation.lat !== null) {
+        form.set("latitude", String(selectedLocation.lat));
+      }
+      if (selectedLocation.lng !== null) {
+        form.set("longitude", String(selectedLocation.lng));
+      }
+
+      const response = await fetch("/api/detection/analyze-media", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await response.json()) as MediaAnalysis | { message?: string };
+      if (!response.ok) {
+        throw new Error(String((data as { message?: string }).message || ""));
+      }
+
+      setMediaAnalysis(data as MediaAnalysis);
+
+      const mappedType = incidentTypeToReportType[String((data as MediaAnalysis).incident_type || "")];
+      if (mappedType) {
+        setSelectedType(mappedType);
+      }
+
+      setDescription(
+        `Model-inferred incident: ${(data as MediaAnalysis).incident_type} (confidence ${Number((data as MediaAnalysis).confidence || 0).toFixed(2)}).`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      setMediaError(message || "Unable to analyze uploaded media right now.");
+    } finally {
+      setIsAnalyzingMedia(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_10%_10%,#0f766e_0%,#0f172a_55%,#020617_100%)] px-6 py-10 text-slate-100 sm:px-10">
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -388,14 +464,50 @@ export default function ReportPage() {
               />
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <label className="rounded-lg border border-white/20 bg-white/5 p-3 text-sm text-slate-200">
-                  Optional: Upload voice note
-                  <input type="file" accept="audio/*" className="mt-2 block w-full text-xs" />
+                  Optional: Upload image/video for AI incident detection
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    onChange={(event) => {
+                      const chosen = event.target.files?.[0] || null;
+                      setMediaFile(chosen);
+                      setMediaAnalysis(null);
+                      setMediaError("");
+                    }}
+                    className="mt-2 block w-full text-xs"
+                  />
                 </label>
-                <label className="rounded-lg border border-white/20 bg-white/5 p-3 text-sm text-slate-200">
-                  Optional: Upload photo (if safe)
-                  <input type="file" accept="image/*" className="mt-2 block w-full text-xs" />
-                </label>
+                <div className="rounded-lg border border-white/20 bg-white/5 p-3 text-sm text-slate-200">
+                  <p className="font-semibold text-slate-100">Run media analysis</p>
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeMedia}
+                    disabled={isAnalyzingMedia}
+                    className="mt-3 rounded-full border border-cyan-200/60 bg-cyan-300/20 px-4 py-2 text-xs font-semibold transition hover:bg-cyan-300/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isAnalyzingMedia ? "Analyzing..." : "Analyze uploaded media"}
+                  </button>
+                </div>
               </div>
+              {mediaError ? (
+                <p className="mt-3 rounded-lg border border-rose-200/40 bg-rose-400/20 p-3 text-sm text-rose-50">
+                  {mediaError}
+                </p>
+              ) : null}
+              {mediaAnalysis ? (
+                <div className="mt-3 rounded-lg border border-cyan-200/40 bg-cyan-200/10 p-3 text-xs text-cyan-50">
+                  <p className="font-semibold text-cyan-100">Media analysis result</p>
+                  <p className="mt-1">
+                    Incident: <span className="font-semibold">{mediaAnalysis.incident_type}</span>
+                    {" | "}Confidence: {Number(mediaAnalysis.confidence || 0).toFixed(2)}
+                    {" | "}Frames analyzed: {mediaAnalysis.frames_analyzed}
+                  </p>
+                  <p className="mt-1">
+                    Backend: {mediaAnalysis.model_backend}
+                    {" | "}Forwarded: {mediaAnalysis.event_forwarded ? "Yes" : "No"}
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-xl border border-white/20 bg-black/15 p-4">

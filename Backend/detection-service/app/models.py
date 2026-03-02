@@ -21,3 +21,14 @@ class AccidentEvent(BaseModel):
 class DetectionIngestResponse(BaseModel):
     message: str
     server_status: int
+
+
+class IncidentAnalysisResponse(BaseModel):
+    message: str
+    incident_type: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    model_backend: str
+    frames_analyzed: int = Field(ge=0)
+    event_forwarded: bool
+    server_status: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
