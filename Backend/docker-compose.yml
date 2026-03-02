@@ -1,0 +1,48 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: dlw-server
+    env_file:
+      - ./server/.env
+    environment:
+      PORT: "3001"
+      AI_ADMIN_ENRICH_URL: http://ai-admin-service:3012/api/ai-admin/enrich-user-report
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  ai-admin-service:
+    build:
+      context: ./ai-admin-service
+      dockerfile: Dockerfile
+    container_name: dlw-ai-admin
+    env_file:
+      - ./ai-admin-service/.env
+    environment:
+      PORT: "3012"
+      SERVER_REPORT_INGEST_URL: http://server:3001/api/reports/detection
+    ports:
+      - "3012:3012"
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
+
+  detection-service:
+    build:
+      context: ./detection-service
+      dockerfile: Dockerfile
+    container_name: dlw-detection
+    env_file:
+      - ./detection-service/.env
+    environment:
+      PORT: "3011"
+      REPORT_PIPELINE_INGEST_URL: http://ai-admin-service:3012/api/ai-admin/ingest
+    ports:
+      - "3011:3011"
+    restart: unless-stopped
+    depends_on:
+      ai-admin-service:
+        condition: service_started

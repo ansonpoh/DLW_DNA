@@ -48,6 +48,25 @@ def _baseline_enrichment(event: AccidentEvent) -> AiEnrichmentResult:
 def _baseline_user_report_enrichment(draft: UserReportDraft) -> UserReportEnrichmentResult:
     cleaned_description = draft.description.strip()
     priority = draft.priority or ("High" if draft.happening_now else "Medium")
+    risky_keywords = (
+        "fire",
+        "smoke",
+        "weapon",
+        "knife",
+        "gun",
+        "fight",
+        "violence",
+        "crash",
+        "accident",
+        "explosion",
+    )
+    description_lower = cleaned_description.lower()
+    inferred_unsafe = any(keyword in description_lower for keyword in risky_keywords)
+    inferred_unsafe = inferred_unsafe or (
+        draft.happening_now
+        and draft.type.lower() in {"medical", "fire/smoke", "violence/fight", "accident/traffic"}
+    )
+    safe_to_continue = False if inferred_unsafe else bool(draft.safe_to_continue)
     location = (draft.location_label or "").strip()
     if location:
         summary = f"{draft.type} report submitted near {location}."
@@ -58,6 +77,7 @@ def _baseline_user_report_enrichment(draft: UserReportDraft) -> UserReportEnrich
         cleaned_description=cleaned_description,
         summary=summary,
         priority=priority,  # type: ignore[arg-type]
+        safe_to_continue=safe_to_continue,
         validation_notes="Fallback heuristic used because AI enrichment is unavailable.",
         used_ai=False,
     )
@@ -151,9 +171,10 @@ class ReportEnricher:
             "Clean up text for clarity while preserving meaning. "
             "Do not invent new facts, injuries, causes, suspect identities, or outcomes. "
             "Assign priority conservatively based on urgency in the provided report only. "
-            "Output only valid JSON with keys: cleaned_description, summary, priority, validation_notes. "
+            "Output only valid JSON with keys: cleaned_description, summary, priority, safe_to_continue, validation_notes. "
             "cleaned_description must be 1-3 sentences. "
             "summary should be concise and factual. "
+            "safe_to_continue must be false if the reporter likely faces immediate risk. "
             "priority must be one of Low, Medium, High, Critical."
         )
 
@@ -201,6 +222,7 @@ class ReportEnricher:
                     "cleaned_description": parsed.get("cleaned_description"),
                     "summary": parsed.get("summary"),
                     "priority": parsed.get("priority"),
+                    "safe_to_continue": parsed.get("safe_to_continue"),
                     "validation_notes": parsed.get("validation_notes"),
                     "used_ai": True,
                 }

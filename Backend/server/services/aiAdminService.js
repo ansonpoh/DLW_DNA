@@ -46,6 +46,8 @@ export async function enrichUserReport(payload) {
     return {
       cleaned_description: cleanedDescription || null,
       priority,
+      safe_to_continue:
+        typeof data?.safe_to_continue === "boolean" ? data.safe_to_continue : null,
       used_ai: Boolean(data?.used_ai),
       summary: String(data?.summary || "").trim(),
       validation_notes: String(data?.validation_notes || "").trim(),

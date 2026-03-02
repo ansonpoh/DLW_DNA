@@ -64,6 +64,7 @@ class UserReportEnrichmentResult(BaseModel):
     cleaned_description: str = Field(min_length=1, max_length=1200)
     summary: str = Field(min_length=1, max_length=280)
     priority: Priority
+    safe_to_continue: bool
     validation_notes: str = Field(min_length=1, max_length=500)
     used_ai: bool
 

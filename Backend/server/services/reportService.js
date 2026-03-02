@@ -316,6 +316,10 @@ export async function createReport(authUser, payload) {
   if (aiEnrichment?.priority) {
     reportInput.priority = aiEnrichment.priority;
   }
+  // Conservative override: AI can mark unsafe, but never force safe.
+  if (aiEnrichment?.safe_to_continue === false) {
+    reportInput.safe_to_continue = false;
+  }
 
   const profileUserId = await getProfileUserId(authUser.id);
   return createReportForUserId(profileUserId, reportInput);
