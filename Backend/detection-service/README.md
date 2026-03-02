@@ -46,3 +46,25 @@ DETECTION_COOLDOWN_SECONDS=20
 ```
 
 If YOLO is unavailable, the service falls back to the legacy motion-area detector.
+
+## Optional: Email Notification on Accident (Testing)
+
+When enabled, each forwarded accident event also sends an email notification.
+
+Add these values to `.env`:
+
+```env
+EMAIL_NOTIFICATIONS_ENABLED=true
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USE_TLS=true
+EMAIL_SMTP_USERNAME=your_email@gmail.com
+EMAIL_SMTP_PASSWORD=your_app_password
+EMAIL_FROM=your_email@gmail.com
+EMAIL_TO=your_email@gmail.com
+EMAIL_SUBJECT_PREFIX=[DLW DNA]
+```
+
+Notes:
+- `EMAIL_TO` supports multiple recipients as comma-separated emails.
+- If SMTP auth is not required by your provider, leave `EMAIL_SMTP_USERNAME` and `EMAIL_SMTP_PASSWORD` empty.

@@ -26,6 +26,15 @@ class Settings:
     )
     server_detection_key: str = os.getenv("SERVER_DETECTION_KEY", "")
     request_timeout_seconds: float = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "10"))
+    email_notifications_enabled: bool = os.getenv("EMAIL_NOTIFICATIONS_ENABLED", "false").lower() == "true"
+    email_smtp_host: str = os.getenv("EMAIL_SMTP_HOST", "")
+    email_smtp_port: int = int(os.getenv("EMAIL_SMTP_PORT", "587"))
+    email_smtp_use_tls: bool = os.getenv("EMAIL_SMTP_USE_TLS", "true").lower() == "true"
+    email_smtp_username: str = os.getenv("EMAIL_SMTP_USERNAME", "")
+    email_smtp_password: str = os.getenv("EMAIL_SMTP_PASSWORD", "")
+    email_from: str = os.getenv("EMAIL_FROM", "")
+    email_to: str = os.getenv("EMAIL_TO", "")
+    email_subject_prefix: str = os.getenv("EMAIL_SUBJECT_PREFIX", "[DLW DNA]")
 
 
 settings = Settings()

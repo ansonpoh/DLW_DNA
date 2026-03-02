@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .detector import get_detector_status, run_camera_detection_loop
 from .models import AccidentEvent, DetectionIngestResponse
+from .notifier import email_notifier
 from .server_client import publisher
 
 app = FastAPI(title="DLW DNA Detection Service", version="2.0.0")
@@ -41,6 +42,7 @@ def _forward_event(event: AccidentEvent) -> int:
             status_code=502,
             detail=f"Main server rejected accident payload ({response.status_code}): {response.text}",
         )
+    email_notifier.send_accident_email(event)
     return response.status_code
 
 
