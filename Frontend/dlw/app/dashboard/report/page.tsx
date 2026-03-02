@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import InteractiveLocationMap from "../profile/InteractiveLocationMap";
 
@@ -52,6 +52,33 @@ const incidentTypeToReportType: Record<string, string> = {
   vehicle_stoppage_or_breakdown: "Accident/Traffic",
 };
 
+const recordingMimeTypes = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/mp4",
+  "audio/ogg;codecs=opus",
+];
+
+const pickRecordingMimeType = () => {
+  if (typeof window === "undefined" || typeof MediaRecorder === "undefined") {
+    return "";
+  }
+  const supported = recordingMimeTypes.find((mimeType) =>
+    MediaRecorder.isTypeSupported(mimeType),
+  );
+  return supported || "";
+};
+
+const extensionForMimeType = (mimeType: string) => {
+  if (mimeType.includes("ogg")) {
+    return "ogg";
+  }
+  if (mimeType.includes("mp4")) {
+    return "m4a";
+  }
+  return "webm";
+};
+
 export default function ReportPage() {
   const router = useRouter();
   const [selectedType, setSelectedType] = useState("Medical");
@@ -64,6 +91,11 @@ export default function ReportPage() {
   const [submitError, setSubmitError] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState("");
+  const [recorderError, setRecorderError] = useState("");
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isRecorderReady, setIsRecorderReady] = useState(false);
   const [isAnalyzingMedia, setIsAnalyzingMedia] = useState(false);
   const [mediaError, setMediaError] = useState("");
   const [mediaAnalysis, setMediaAnalysis] = useState<MediaAnalysis | null>(null);
@@ -93,6 +125,12 @@ export default function ReportPage() {
     lat: null,
     lng: null,
   });
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<BlobPart[]>([]);
+  const recordingTimerRef = useRef<number | null>(null);
+
+  const supportsAudioRecording = isRecorderReady;
 
   const loadStoredLocations = async (token: string) => {
     try {
@@ -200,6 +238,129 @@ export default function ReportPage() {
     }
   }, [router]);
 
+  useEffect(() => {
+    const supported =
+      typeof window !== "undefined" &&
+      typeof navigator !== "undefined" &&
+      typeof navigator.mediaDevices !== "undefined" &&
+      typeof navigator.mediaDevices.getUserMedia === "function" &&
+      typeof MediaRecorder !== "undefined";
+    setIsRecorderReady(supported);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current !== null) {
+        window.clearInterval(recordingTimerRef.current);
+      }
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+      }
+    };
+  }, [recordedAudioUrl]);
+
+  const clearRecorderResources = () => {
+    if (recordingTimerRef.current !== null) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    setIsRecordingAudio(false);
+  };
+
+  const stopAudioRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "recording") {
+      return;
+    }
+    recorder.stop();
+  };
+
+  const startAudioRecording = async () => {
+    if (!supportsAudioRecording) {
+      setRecorderError("Audio recording is not supported in this browser.");
+      return;
+    }
+
+    try {
+      setRecorderError("");
+      setSubmitError("");
+      setTranscriptionPreview(null);
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+        setRecordedAudioUrl("");
+      }
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = pickRecordingMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(mediaStream, { mimeType })
+        : new MediaRecorder(mediaStream);
+
+      mediaStreamRef.current = mediaStream;
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      setRecordingSeconds(0);
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const activeMimeType = recorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(recordingChunksRef.current, { type: activeMimeType });
+        if (blob.size <= 0) {
+          setRecorderError("No audio captured. Please try recording again.");
+          clearRecorderResources();
+          return;
+        }
+
+        const extension = extensionForMimeType(activeMimeType);
+        const filename = `voice-note-${Date.now()}.${extension}`;
+        const file = new File([blob], filename, { type: activeMimeType });
+        const objectUrl = URL.createObjectURL(blob);
+        setAudioFile(file);
+        setRecordedAudioUrl(objectUrl);
+        clearRecorderResources();
+      };
+
+      recorder.onerror = () => {
+        setRecorderError("Recording failed. Please retry.");
+        clearRecorderResources();
+      };
+
+      recorder.start(250);
+      setIsRecordingAudio(true);
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds((current) => current + 1);
+      }, 1000);
+    } catch {
+      setRecorderError(
+        "Microphone access failed. Allow microphone permission and use HTTPS or localhost.",
+      );
+      clearRecorderResources();
+    }
+  };
+
+  const removeAttachedAudio = () => {
+    if (isRecordingAudio) {
+      stopAudioRecording();
+    }
+    setAudioFile(null);
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+      setRecordedAudioUrl("");
+    }
+  };
+
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       setLocationError("Geolocation is not supported in this browser.");
@@ -289,6 +450,10 @@ export default function ReportPage() {
     setTranscriptionPreview(null);
 
     const hasAudio = Boolean(audioFile);
+    if (isRecordingAudio) {
+      setSubmitError("Stop recording before submitting the report.");
+      return;
+    }
     if (!hasAudio && !description.trim()) {
       setSubmitError("Please describe what happened or attach an audio clip.");
       return;
@@ -386,6 +551,10 @@ export default function ReportPage() {
       setSubmitted(true);
       setDescription("");
       setAudioFile(null);
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+        setRecordedAudioUrl("");
+      }
     } catch (err) {
       const axiosError = err as AxiosError<{ message?: string }>;
       const apiMessage = axiosError.response?.data?.message || (err instanceof Error ? err.message : "");
@@ -515,22 +684,82 @@ export default function ReportPage() {
                 className="mt-3 min-h-28 w-full rounded-lg border border-white/25 bg-white/5 p-3 text-sm text-slate-100 outline-none ring-teal-300/60 transition focus:ring-2"
               />
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <label className="rounded-lg border border-teal-200/35 bg-teal-200/10 p-3 text-sm text-teal-50">
-                  Optional: Upload voice note (STT)
+                <div className="rounded-lg border border-teal-200/35 bg-teal-200/10 p-3 text-sm text-teal-50">
+                  <p className="font-semibold text-teal-100">Optional: Upload voice note (STT)</p>
                   <input
+                    id="voice-note-upload"
                     type="file"
                     accept="audio/*"
                     onChange={(event) => {
                       const chosen = event.target.files?.[0] || null;
                       setAudioFile(chosen);
+                      if (recordedAudioUrl) {
+                        URL.revokeObjectURL(recordedAudioUrl);
+                        setRecordedAudioUrl("");
+                      }
                       setSubmitError("");
                     }}
-                    className="mt-2 block w-full text-xs"
+                    className="hidden"
                   />
+                  <label
+                    htmlFor="voice-note-upload"
+                    className="mt-2 inline-flex cursor-pointer rounded-full border border-teal-100/50 bg-teal-300/25 px-3 py-1 text-xs font-semibold text-teal-50 transition hover:bg-teal-300/35"
+                  >
+                    Choose audio file
+                  </label>
                   <p className="mt-2 text-xs text-teal-100/90">
                     If attached, this report is transcribed by AI and you will see transcript confirmation after submit.
                   </p>
-                </label>
+                  <div className="mt-3 rounded-lg border border-teal-200/35 bg-teal-100/10 p-3">
+                    <p className="text-xs font-semibold text-teal-100">
+                      Or record directly in browser
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void startAudioRecording()}
+                        disabled={isRecordingAudio || !supportsAudioRecording}
+                        className="rounded-full border border-teal-100/50 bg-teal-300/25 px-3 py-1 text-xs font-semibold text-teal-50 transition hover:bg-teal-300/35 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isRecordingAudio ? "Recording..." : "Start recording"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopAudioRecording}
+                        disabled={!isRecordingAudio}
+                        className="rounded-full border border-amber-100/45 bg-amber-300/20 px-3 py-1 text-xs font-semibold text-amber-50 transition hover:bg-amber-300/30 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Stop
+                      </button>
+                      {isRecordingAudio ? (
+                        <span className="text-xs text-teal-100/90">
+                          {`Rec ${Math.floor(recordingSeconds / 60)
+                            .toString()
+                            .padStart(2, "0")}:${(recordingSeconds % 60)
+                            .toString()
+                            .padStart(2, "0")}`}
+                        </span>
+                      ) : null}
+                    </div>
+                    {recordedAudioUrl ? (
+                      <div className="mt-2 space-y-2">
+                        <audio controls src={recordedAudioUrl} className="w-full" />
+                        <button
+                          type="button"
+                          onClick={removeAttachedAudio}
+                          className="rounded-full border border-white/35 px-3 py-1 text-xs text-slate-100 transition hover:bg-white/10"
+                        >
+                          Remove audio
+                        </button>
+                      </div>
+                    ) : null}
+                    {recorderError ? (
+                      <p className="mt-2 rounded-md border border-rose-200/40 bg-rose-400/20 p-2 text-xs text-rose-50">
+                        {recorderError}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
                 <label className="rounded-lg border border-white/20 bg-white/5 p-3 text-sm text-slate-200">
                   Optional: Upload image/video for AI incident detection
                   <input
@@ -559,7 +788,7 @@ export default function ReportPage() {
               </div>
               {audioFile ? (
                 <div className="mt-3 rounded-lg border border-teal-200/40 bg-teal-200/10 p-3 text-xs text-teal-50">
-                  Voice note selected: <span className="font-semibold">{audioFile.name}</span>
+                  Voice note ready: <span className="font-semibold">{audioFile.name}</span>
                 </div>
               ) : null}
               {mediaError ? (
