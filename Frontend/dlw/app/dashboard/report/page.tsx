@@ -17,6 +17,15 @@ const reportTypes = [
   "Other",
 ];
 
+type AiGuidance = {
+  used_ai: boolean;
+  summary: string;
+  validation_notes: string;
+  safe_to_continue: boolean;
+  reassurance_message: string;
+  next_steps: string[];
+};
+
 export default function ReportPage() {
   const router = useRouter();
   const [selectedType, setSelectedType] = useState("Medical");
@@ -27,6 +36,7 @@ export default function ReportPage() {
   const [accessToken, setAccessToken] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [aiGuidance, setAiGuidance] = useState<AiGuidance | null>(null);
   const [profileLocations, setProfileLocations] = useState<
     Array<{
       key: "home" | "work";
@@ -242,6 +252,7 @@ export default function ReportPage() {
     event.preventDefault();
     setSubmitError("");
     setSubmitted(false);
+    setAiGuidance(null);
 
     if (!description.trim()) {
       setSubmitError("Please describe what happened before submitting.");
@@ -275,11 +286,29 @@ export default function ReportPage() {
         priority: estimatedPriority,
       };
 
-      await api.post("/api/reports", payload, {
+      const { data } = await api.post("/api/reports", payload, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
       });
+
+      const guidanceSource = data?.ai_guidance;
+      if (guidanceSource && typeof guidanceSource === "object") {
+        const parsedSteps = Array.isArray(guidanceSource.next_steps)
+          ? guidanceSource.next_steps
+              .map((step: unknown) => String(step || "").trim())
+              .filter((step: string) => step.length > 0)
+          : [];
+
+        setAiGuidance({
+          used_ai: Boolean(guidanceSource.used_ai),
+          summary: String(guidanceSource.summary || "").trim(),
+          validation_notes: String(guidanceSource.validation_notes || "").trim(),
+          safe_to_continue: Boolean(guidanceSource.safe_to_continue),
+          reassurance_message: String(guidanceSource.reassurance_message || "").trim(),
+          next_steps: parsedSteps,
+        });
+      }
 
       setSubmitted(true);
       setDescription("");
@@ -482,8 +511,8 @@ export default function ReportPage() {
               </div>
               {!safeToContinue ? (
                 <p className="mt-3 rounded-lg border border-rose-200/40 bg-rose-400/20 p-3 text-sm text-rose-50">
-                  Move to safety first. If immediate danger exists, call emergency
-                  services now at 911.
+                  Move to safety first. If immediate danger exists, call 999 for
+                  police threats or 995 for medical/fire emergencies.
                 </p>
               ) : null}
             </div>
@@ -506,6 +535,34 @@ export default function ReportPage() {
                 <div className="mt-4 space-y-2 rounded-lg border border-emerald-200/40 bg-emerald-300/20 p-4 text-sm text-emerald-50">
                   <p className="font-semibold">Report received</p>
                   <p>You may be contacted for clarification.</p>
+                  {aiGuidance ? (
+                    <div className="rounded-lg border border-emerald-100/40 bg-emerald-100/15 p-3 text-emerald-50">
+                      <p className="font-semibold">Recommended next steps</p>
+                      {aiGuidance.reassurance_message ? (
+                        <p className="mt-2 rounded-md border border-emerald-200/40 bg-emerald-200/15 p-2 text-xs text-emerald-50">
+                          {aiGuidance.reassurance_message}
+                        </p>
+                      ) : null}
+                      {aiGuidance.summary ? (
+                        <p className="mt-1 text-xs text-emerald-100/90">
+                          Summary: {aiGuidance.summary}
+                        </p>
+                      ) : null}
+                      {!aiGuidance.safe_to_continue ? (
+                        <p className="mt-2 rounded-md border border-rose-200/40 bg-rose-400/20 p-2 text-xs text-rose-50">
+                          Immediate risk detected. Move to safety and call 999 for
+                          police threats or 995 for medical/fire emergencies.
+                        </p>
+                      ) : null}
+                      {aiGuidance.next_steps.length ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-emerald-50">
+                          {aiGuidance.next_steps.map((step, index) => (
+                            <li key={`${index}-${step}`}>{step}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <Link
                     href="/dashboard/report/submitted"
                     className="inline-flex rounded-full border border-emerald-100/40 bg-emerald-100/20 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-100/30"

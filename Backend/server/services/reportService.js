@@ -185,6 +185,99 @@ function buildDetectionDescription(reportInput) {
   );
 }
 
+function buildSuggestedNextSteps(reportInput) {
+  const type = String(reportInput?.type || "").trim().toLowerCase();
+  const happeningNow = Boolean(reportInput?.happening_now);
+  const safeToContinue = Boolean(reportInput?.safe_to_continue);
+
+  if (!safeToContinue) {
+    return [
+      "Move to a safer location immediately if you can do so safely.",
+      "Call 999 for police threats or 995 for medical/fire emergencies.",
+      "Avoid approaching the hazard and wait for responders.",
+    ];
+  }
+
+  if (type.includes("accident") || type.includes("traffic")) {
+    return [
+      "Keep clear of traffic and stay visible if you are near the road.",
+      "Share exact location details and lane blockage information with authorities.",
+      "Only take photos or videos from a safe position.",
+    ];
+  }
+
+  if (type.includes("medical")) {
+    return [
+      "Call 995 and provide the exact location to medical services.",
+      "Follow dispatcher instructions and only assist if the area is safe.",
+      "Avoid moving an injured person unless there is immediate danger.",
+    ];
+  }
+
+  if (type.includes("fire") || type.includes("smoke")) {
+    return [
+      "Move away from smoke or flames and stay upwind if possible.",
+      "Call 995 and report what is burning and where.",
+      "Do not re-enter affected areas until officials say it is safe.",
+    ];
+  }
+
+  if (type.includes("violence") || type.includes("fight")) {
+    return [
+      "Leave the area and seek a secure location immediately.",
+      "Call 999 and avoid direct confrontation.",
+      "Share details from a safe place only when requested by authorities.",
+    ];
+  }
+
+  if (happeningNow) {
+    return [
+      "Keep a safe distance and monitor the situation.",
+      "Contact local authorities and share exact location details.",
+      "If risk increases, move away and seek immediate help.",
+    ];
+  }
+
+  return [
+    "Monitor the situation from a safe distance.",
+    "Share additional updates with authorities if conditions change.",
+    "Seek official guidance if similar incidents continue.",
+  ];
+}
+
+function buildReassuranceMessage(reportInput) {
+  const type = String(reportInput?.type || "").trim().toLowerCase();
+  const safeToContinue = Boolean(reportInput?.safe_to_continue);
+  let lead = "Your report has been flagged for relevant emergency follow-up.";
+  let emergencyLine = "999";
+
+  if (type.includes("medical")) {
+    lead = "Your report has been flagged for medical emergency follow-up.";
+    emergencyLine = "995";
+  } else if (type.includes("fire") || type.includes("smoke")) {
+    lead = "Your report has been flagged for fire and rescue follow-up.";
+    emergencyLine = "995";
+  } else if (
+    type.includes("violence") ||
+    type.includes("fight") ||
+    type.includes("weapon") ||
+    type.includes("harass") ||
+    type.includes("suspicious")
+  ) {
+    lead = "Your report has been flagged for police response follow-up.";
+  } else if (type.includes("accident") || type.includes("traffic")) {
+    lead = "Your report has been flagged for traffic emergency follow-up.";
+  } else {
+    emergencyLine = "999 or 995";
+  }
+
+  if (safeToContinue) {
+    return `${lead} If risk increases or someone is in immediate danger, call ${emergencyLine} now.`;
+  }
+
+  return `${lead} Move to safety and call ${emergencyLine} now if there is immediate danger.`;
+}
+
 function buildInsertParts(reportInput, mapping) {
   const insertColumns = ["user_id"];
   const placeholders = ["$1::uuid"];
@@ -322,7 +415,27 @@ export async function createReport(authUser, payload) {
   }
 
   const profileUserId = await getProfileUserId(authUser.id);
-  return createReportForUserId(profileUserId, reportInput);
+  const created = await createReportForUserId(profileUserId, reportInput);
+  const fallbackNextSteps = buildSuggestedNextSteps(reportInput);
+  const nextSteps =
+    Array.isArray(aiEnrichment?.next_steps) && aiEnrichment.next_steps.length > 0
+      ? aiEnrichment.next_steps
+      : fallbackNextSteps;
+  const reassuranceMessage =
+    String(aiEnrichment?.reassurance_message || "").trim() ||
+    buildReassuranceMessage(reportInput);
+
+  return {
+    ...created,
+    ai_guidance: {
+      used_ai: Boolean(aiEnrichment?.used_ai),
+      summary: String(aiEnrichment?.summary || "").trim(),
+      validation_notes: String(aiEnrichment?.validation_notes || "").trim(),
+      safe_to_continue: Boolean(reportInput.safe_to_continue),
+      reassurance_message: reassuranceMessage,
+      next_steps: nextSteps,
+    },
+  };
 }
 
 export async function createDetectionReport(payload) {

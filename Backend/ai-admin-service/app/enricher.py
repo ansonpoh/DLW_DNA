@@ -72,15 +72,115 @@ def _baseline_user_report_enrichment(draft: UserReportDraft) -> UserReportEnrich
         summary = f"{draft.type} report submitted near {location}."
     else:
         summary = f"{draft.type} report submitted."
+    reassurance_message = _build_reassurance_message(
+        report_type=draft.type,
+        safe_to_continue=safe_to_continue,
+    )
+    next_steps = _suggest_user_next_steps(
+        report_type=draft.type,
+        happening_now=bool(draft.happening_now),
+        safe_to_continue=safe_to_continue,
+    )
 
     return UserReportEnrichmentResult(
         cleaned_description=cleaned_description,
         summary=summary,
         priority=priority,  # type: ignore[arg-type]
         safe_to_continue=safe_to_continue,
+        reassurance_message=reassurance_message,
+        next_steps=next_steps,
         validation_notes="Fallback heuristic used because AI enrichment is unavailable.",
         used_ai=False,
     )
+
+
+def _build_reassurance_message(*, report_type: str, safe_to_continue: bool) -> str:
+    report_type_normalized = report_type.strip().lower()
+    emergency_line = "999"
+
+    if "medical" in report_type_normalized:
+        lead = "Your report has been flagged for medical emergency follow-up."
+        emergency_line = "995"
+    elif "fire" in report_type_normalized or "smoke" in report_type_normalized:
+        lead = "Your report has been flagged for fire and rescue follow-up."
+        emergency_line = "995"
+    elif (
+        "violence" in report_type_normalized
+        or "fight" in report_type_normalized
+        or "weapon" in report_type_normalized
+        or "harass" in report_type_normalized
+        or "suspicious" in report_type_normalized
+    ):
+        lead = "Your report has been flagged for police response follow-up."
+    elif "accident" in report_type_normalized or "traffic" in report_type_normalized:
+        lead = "Your report has been flagged for traffic emergency follow-up."
+    else:
+        lead = "Your report has been flagged for relevant emergency follow-up."
+        emergency_line = "999 or 995"
+
+    if safe_to_continue:
+        return (
+            f"{lead} If risk increases or someone is in immediate danger, "
+            f"call {emergency_line} now."
+        )
+    return f"{lead} Move to safety and call {emergency_line} now if there is immediate danger."
+
+
+def _suggest_user_next_steps(
+    *,
+    report_type: str,
+    happening_now: bool,
+    safe_to_continue: bool,
+) -> list[str]:
+    report_type_normalized = report_type.strip().lower()
+
+    if not safe_to_continue:
+        return [
+            "Move to a safer location immediately if you can do so safely.",
+            "Call 999 for police threats or 995 for medical/fire emergencies.",
+            "Avoid approaching the hazard and wait for responders.",
+        ]
+
+    if "accident" in report_type_normalized or "traffic" in report_type_normalized:
+        return [
+            "Keep clear of traffic and remain visible if you are near the road.",
+            "Share the exact location and any lane blockage details with authorities.",
+            "Document only from a safe distance and avoid obstructing responders.",
+        ]
+
+    if "medical" in report_type_normalized:
+        return [
+            "Call 995 and provide the exact location to medical services.",
+            "Stay with the person only if the scene is safe and follow dispatcher instructions.",
+            "Do not move an injured person unless there is immediate danger.",
+        ]
+
+    if "fire" in report_type_normalized or "smoke" in report_type_normalized:
+        return [
+            "Move upwind and away from smoke or flames.",
+            "Call 995 and report what is burning and where.",
+            "Do not attempt to re-enter affected areas until officials say it is safe.",
+        ]
+
+    if "violence" in report_type_normalized or "fight" in report_type_normalized:
+        return [
+            "Leave the area and seek shelter in a secure location.",
+            "Call 999 and avoid direct confrontation.",
+            "Observe from safety and share clear descriptions only if asked by authorities.",
+        ]
+
+    if happening_now:
+        return [
+            "Stay alert and keep a safe distance from the situation.",
+            "Contact local authorities and share exact location details.",
+            "If conditions worsen, move away and seek immediate help.",
+        ]
+
+    return [
+        "Monitor the area and avoid unnecessary exposure to risk.",
+        "Share any useful updates or evidence with authorities if requested.",
+        "Seek official guidance if similar incidents continue.",
+    ]
 
 
 class ReportEnricher:
@@ -171,10 +271,15 @@ class ReportEnricher:
             "Clean up text for clarity while preserving meaning. "
             "Do not invent new facts, injuries, causes, suspect identities, or outcomes. "
             "Assign priority conservatively based on urgency in the provided report only. "
-            "Output only valid JSON with keys: cleaned_description, summary, priority, safe_to_continue, validation_notes. "
+            "Output only valid JSON with keys: cleaned_description, summary, priority, safe_to_continue, reassurance_message, next_steps, validation_notes. "
             "cleaned_description must be 1-3 sentences. "
             "summary should be concise and factual. "
             "safe_to_continue must be false if the reporter likely faces immediate risk. "
+            "reassurance_message must be one supportive sentence that references the most relevant emergency service type "
+            "(medical, fire/rescue, police, or traffic response) and advises calling 999 for police threats "
+            "or 995 for medical/fire emergencies when immediate danger exists. "
+            "Do not claim confirmed dispatch, arrival, or direct contact completion. "
+            "next_steps must be a list of 2-4 concise, practical actions for the reporter to take now. "
             "priority must be one of Low, Medium, High, Critical."
         )
 
@@ -223,6 +328,8 @@ class ReportEnricher:
                     "summary": parsed.get("summary"),
                     "priority": parsed.get("priority"),
                     "safe_to_continue": parsed.get("safe_to_continue"),
+                    "reassurance_message": parsed.get("reassurance_message"),
+                    "next_steps": parsed.get("next_steps"),
                     "validation_notes": parsed.get("validation_notes"),
                     "used_ai": True,
                 }

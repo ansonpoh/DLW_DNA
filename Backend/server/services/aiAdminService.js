@@ -42,12 +42,20 @@ export async function enrichUserReport(payload) {
     const priority = ALLOWED_PRIORITIES.has(priorityCandidate)
       ? priorityCandidate
       : null;
+    const nextSteps = Array.isArray(data?.next_steps)
+      ? data.next_steps
+          .map((step) => String(step || "").trim())
+          .filter((step) => step.length > 0)
+          .slice(0, 5)
+      : [];
 
     return {
       cleaned_description: cleanedDescription || null,
       priority,
       safe_to_continue:
         typeof data?.safe_to_continue === "boolean" ? data.safe_to_continue : null,
+      reassurance_message: String(data?.reassurance_message || "").trim(),
+      next_steps: nextSteps,
       used_ai: Boolean(data?.used_ai),
       summary: String(data?.summary || "").trim(),
       validation_notes: String(data?.validation_notes || "").trim(),

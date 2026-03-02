@@ -65,6 +65,8 @@ class UserReportEnrichmentResult(BaseModel):
     summary: str = Field(min_length=1, max_length=280)
     priority: Priority
     safe_to_continue: bool
+    reassurance_message: str = Field(min_length=1, max_length=320)
+    next_steps: list[str] = Field(min_length=1, max_length=5)
     validation_notes: str = Field(min_length=1, max_length=500)
     used_ai: bool
 
