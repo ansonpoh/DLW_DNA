@@ -1,0 +1,321 @@
+{
+  "info": {
+    "_postman_id": "d8e2b9af-6d95-4e4a-b7fe-76c0188d3557",
+    "name": "DLW DNA Detection MVP Smoke",
+    "description": "Smoke tests for detection service and backend forwarding flow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Backend Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{backend_url}}/health",
+          "host": [
+            "{{backend_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Detection Service Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{detection_url}}/health",
+          "host": [
+            "{{detection_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Detection Ingest -> Backend Forward (Success)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-detection-key",
+            "value": "{{detection_service_ingest_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"camera_id\": \"CAM-01\",\n  \"confidence\": 0.92,\n  \"description\": \"Manual ingest smoke test\",\n  \"detected_at\": \"2026-03-02T00:00:00Z\",\n  \"metadata\": {\n    \"test\": \"manual_ingest\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{detection_url}}/api/detection/ingest",
+          "host": [
+            "{{detection_url}}"
+          ],
+          "path": [
+            "api",
+            "detection",
+            "ingest"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Forwarded to backend and created report', function () {",
+              "  var body = pm.response.json();",
+              "  pm.expect(body.server_status).to.eql(201);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Detection Ingest (Invalid Ingest Key)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-detection-key",
+            "value": "invalid-key",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"camera_id\": \"CAM-01\",\n  \"confidence\": 0.92,\n  \"description\": \"Invalid key test\",\n  \"detected_at\": \"2026-03-02T00:00:00Z\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{detection_url}}/api/detection/ingest",
+          "host": [
+            "{{detection_url}}"
+          ],
+          "path": [
+            "api",
+            "detection",
+            "ingest"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 401', function () {",
+              "  pm.response.to.have.status(401);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Start Camera Loop (Success)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-detection-admin-key",
+            "value": "{{detection_admin_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{detection_url}}/api/detection/start-camera",
+          "host": [
+            "{{detection_url}}"
+          ],
+          "path": [
+            "api",
+            "detection",
+            "start-camera"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 202', function () {",
+              "  pm.response.to.have.status(202);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Start Camera Loop (Invalid Admin Key)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-detection-admin-key",
+            "value": "invalid-admin-key",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{detection_url}}/api/detection/start-camera",
+          "host": [
+            "{{detection_url}}"
+          ],
+          "path": [
+            "api",
+            "detection",
+            "start-camera"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 401', function () {",
+              "  pm.response.to.have.status(401);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Backend Direct Detection Ingest (Optional Debug)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-detection-key",
+            "value": "{{backend_detection_ingest_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"Accident\",\n  \"description\": \"Direct backend detection ingest debug\",\n  \"happening_now\": true,\n  \"safe_to_continue\": false,\n  \"location_label\": \"Test Camera A\",\n  \"location_source\": \"camera\",\n  \"priority\": \"High\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{backend_url}}/api/reports/detection",
+          "host": [
+            "{{backend_url}}"
+          ],
+          "path": [
+            "api",
+            "reports",
+            "detection"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "backend_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "detection_url",
+      "value": "http://localhost:3011"
+    },
+    {
+      "key": "detection_service_ingest_key",
+      "value": "dlw_server_9a4e2c7b1d6f3a8c5e0b2d7f1a4c9e6b"
+    },
+    {
+      "key": "detection_admin_key",
+      "value": "dlw_admin_3e8b1d7a5c9f2e6a4b0d8c1f7a3e5b9d"
+    },
+    {
+      "key": "backend_detection_ingest_key",
+      "value": "dlw_ingest_7f2c9a1e4b6d8f0a3c5e7b9d1f2a4c6e"
+    }
+  ]
+}
