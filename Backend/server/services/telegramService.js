@@ -10,9 +10,21 @@ import {
 import { transcribeVoiceBuffer } from "./sttService.js";
 import { createAgencyDispatchLog } from "./agencyRoutingService.js";
 import { geocodeLocationQuery } from "./geocodingService.js";
+import { analyzeMediaForIncident } from "./detectionMediaService.js";
 
 const TELEGRAM_LINKS_TABLE = "users.telegram_user_links";
 const USERS_TABLE = "users.users";
+const TELEGRAM_MEDIA_TYPE_EXT = {
+  photo: ".jpg",
+  video: ".mp4",
+};
+const INCIDENT_TYPE_TO_REPORT = {
+  traffic_accident: "Accident/Traffic",
+  pedestrian_vehicle_conflict: "Accident/Traffic",
+  crowd_disturbance: "Violence/Assault",
+  vehicle_stoppage_or_breakdown: "Accident/Traffic",
+  no_clear_incident: "General Safety",
+};
 
 function normalizeHeaderValue(value) {
   if (Array.isArray(value)) {
@@ -43,6 +55,12 @@ function extractTelegramMessage(update) {
 export function detectTelegramMessageType(message) {
   if (message?.location) {
     return "location";
+  }
+  if (Array.isArray(message?.photo) && message.photo.length > 0) {
+    return "photo";
+  }
+  if (message?.video) {
+    return "video";
   }
   if (message?.voice) {
     return "voice";
@@ -128,6 +146,67 @@ function formatDisplayName(from) {
   return joined || username || "Telegram User";
 }
 
+function getMediaMaxBytes() {
+  const fallback = 20 * 1024 * 1024;
+  return Number.isFinite(env.TELEGRAM_MEDIA_MAX_BYTES)
+    ? Math.max(1_000_000, env.TELEGRAM_MEDIA_MAX_BYTES)
+    : fallback;
+}
+
+function getMediaDetails(messageType, message) {
+  if (messageType === "photo") {
+    const variants = Array.isArray(message?.photo) ? message.photo : [];
+    if (!variants.length) {
+      throw new HttpError(400, "Photo payload did not contain file variants.");
+    }
+    let selected = variants[0];
+    for (const candidate of variants) {
+      const selectedScore = Number(selected?.file_size || 0);
+      const candidateScore = Number(candidate?.file_size || 0);
+      if (candidateScore > selectedScore) {
+        selected = candidate;
+      }
+    }
+    return {
+      fileId: String(selected?.file_id || "").trim(),
+      fileSize: Number(selected?.file_size || 0),
+      filename: `telegram-photo-${selected?.file_unique_id || "upload"}${TELEGRAM_MEDIA_TYPE_EXT.photo}`,
+    };
+  }
+
+  if (messageType === "video") {
+    const video = message?.video || {};
+    const fileName = String(video?.file_name || "").trim();
+    return {
+      fileId: String(video?.file_id || "").trim(),
+      fileSize: Number(video?.file_size || 0),
+      filename:
+        fileName || `telegram-video-${video?.file_unique_id || "upload"}${TELEGRAM_MEDIA_TYPE_EXT.video}`,
+    };
+  }
+
+  throw new HttpError(400, "Unsupported Telegram media type.");
+}
+
+function mapIncidentTypeToReportType(incidentType, fallbackText = "") {
+  const normalized = String(incidentType || "").trim().toLowerCase();
+  if (INCIDENT_TYPE_TO_REPORT[normalized]) {
+    return INCIDENT_TYPE_TO_REPORT[normalized];
+  }
+  return inferReportType(fallbackText, "text");
+}
+
+function inferPriorityFromMedia(incidentType, confidence, description) {
+  const type = String(incidentType || "").trim().toLowerCase();
+  if (type === "traffic_accident" && confidence >= 0.7) {
+    return "High";
+  }
+  if (type === "pedestrian_vehicle_conflict" || type === "crowd_disturbance") {
+    return confidence >= 0.65 ? "High" : "Medium";
+  }
+  return inferPriority(mapIncidentTypeToReportType(type), description);
+}
+
 function extractLocationPhraseFromText(text) {
   const source = String(text || "").trim();
   if (!source) {
@@ -202,6 +281,7 @@ export async function normalizeTelegramUpdate(
   const getFilePath = dependencies.getFilePath || getTelegramFilePath;
   const downloadFile = dependencies.downloadFile || downloadTelegramFile;
   const geocodeLocation = dependencies.geocodeLocation || geocodeLocationQuery;
+  const analyzeMedia = dependencies.analyzeMedia || analyzeMediaForIncident;
 
   const message = extractTelegramMessage(update);
   if (!message) {
@@ -221,8 +301,41 @@ export async function normalizeTelegramUpdate(
   }
 
   let description = "";
+  let mediaAnalysis = null;
   if (messageType === "text") {
     description = String(message.text || "").trim();
+  } else if (messageType === "photo" || messageType === "video") {
+    const details = getMediaDetails(messageType, message);
+    if (!details.fileId) {
+      throw new HttpError(400, `${messageType} message did not include file_id.`);
+    }
+
+    const maxBytes = getMediaMaxBytes();
+    if (details.fileSize > maxBytes) {
+      throw new HttpError(
+        413,
+        `Telegram ${messageType} exceeds size limit (${details.fileSize} bytes > ${maxBytes} bytes).`,
+      );
+    }
+
+    const filePath = await getFilePath(details.fileId);
+    const mediaBuffer = await downloadFile(filePath);
+    if (mediaBuffer.length > maxBytes) {
+      throw new HttpError(
+        413,
+        `Telegram ${messageType} download exceeds size limit (${mediaBuffer.length} bytes > ${maxBytes} bytes).`,
+      );
+    }
+
+    mediaAnalysis = await analyzeMedia(mediaBuffer, {
+      filename: details.filename,
+      sourceId: "telegram-bot",
+    });
+    const caption = String(message?.caption || message?.text || "").trim();
+    const detectedType = String(mediaAnalysis?.incidentType || "no_clear_incident").trim();
+    const confidence = Number(mediaAnalysis?.confidence || 0);
+    const summary = `Media analysis result: ${detectedType.replaceAll("_", " ")} (${Math.round(confidence * 100)}% confidence).`;
+    description = caption ? `${caption}\n\n${summary}` : summary;
   } else if (messageType === "voice") {
     const fileId = String(message?.voice?.file_id || "").trim();
     if (!fileId) {
@@ -260,7 +373,14 @@ export async function normalizeTelegramUpdate(
     }
   }
 
-  const reportType = inferReportType(description, messageType);
+  const reportType =
+    messageType === "photo" || messageType === "video"
+      ? mapIncidentTypeToReportType(mediaAnalysis?.incidentType, description)
+      : inferReportType(description, messageType);
+  const priority =
+    messageType === "photo" || messageType === "video"
+      ? inferPriorityFromMedia(mediaAnalysis?.incidentType, mediaAnalysis?.confidence, description)
+      : inferPriority(reportType, description);
 
   return {
     ignored: false,
@@ -279,7 +399,7 @@ export async function normalizeTelegramUpdate(
       location_source: locationSource,
       latitude,
       longitude,
-      priority: inferPriority(reportType, description),
+      priority,
       status: "submitted",
     },
   };

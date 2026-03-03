@@ -10,6 +10,13 @@ test("detects text message type", () => {
   assert.equal(detectTelegramMessageType(message), "text");
 });
 
+test("detects photo and video message types", () => {
+  const photoMessage = { photo: [{ file_id: "a" }] };
+  const videoMessage = { video: { file_id: "b" } };
+  assert.equal(detectTelegramMessageType(photoMessage), "photo");
+  assert.equal(detectTelegramMessageType(videoMessage), "video");
+});
+
 test("normalizes text update into report draft", async () => {
   const update = {
     update_id: 1,
@@ -124,4 +131,80 @@ test("extracts and geocodes location phrase from text narrative", async () => {
   assert.equal(normalized.reportDraft.latitude, 1.436);
   assert.equal(normalized.reportDraft.longitude, 103.786);
   assert.equal(normalized.reportDraft.location_source, "telegram_text_geocoded");
+});
+
+test("normalizes photo update using detection analysis dependency", async () => {
+  const update = {
+    update_id: 6,
+    message: {
+      caption: "Major collision near marina bay",
+      photo: [
+        { file_id: "photo-small", file_size: 1200, file_unique_id: "small" },
+        { file_id: "photo-large", file_size: 4500, file_unique_id: "large" },
+      ],
+      chat: { id: 106 },
+      from: { id: 506, first_name: "Nia" },
+    },
+  };
+
+  const normalized = await normalizeTelegramUpdate(update, {
+    getFilePath: async (fileId) => {
+      assert.equal(fileId, "photo-large");
+      return "photos/large.jpg";
+    },
+    downloadFile: async () => Buffer.from("jpeg-bytes"),
+    analyzeMedia: async (_buffer, options) => {
+      assert.equal(options.filename, "telegram-photo-large.jpg");
+      return {
+        incidentType: "traffic_accident",
+        confidence: 0.82,
+      };
+    },
+    geocodeLocation: async () => ({
+      lat: 1.284,
+      lng: 103.86,
+      display_name: "Marina Bay, Singapore",
+    }),
+  });
+
+  assert.equal(normalized.ignored, false);
+  assert.equal(normalized.messageType, "photo");
+  assert.equal(normalized.reportDraft.type, "Accident/Traffic");
+  assert.equal(normalized.reportDraft.priority, "High");
+  assert.match(normalized.reportDraft.description, /traffic accident/i);
+  assert.equal(normalized.reportDraft.location_source, "telegram_photo_geocoded");
+});
+
+test("normalizes video update using detection analysis dependency", async () => {
+  const update = {
+    update_id: 7,
+    message: {
+      caption: "People are fighting in the street",
+      video: {
+        file_id: "video-file-1",
+        file_size: 42000,
+        file_unique_id: "vid-unique",
+      },
+      chat: { id: 107 },
+      from: { id: 507, first_name: "Jon" },
+    },
+  };
+
+  const normalized = await normalizeTelegramUpdate(update, {
+    getFilePath: async () => "videos/incident.mp4",
+    downloadFile: async () => Buffer.alloc(2048, 1),
+    analyzeMedia: async () => ({
+      incidentType: "crowd_disturbance",
+      confidence: 0.71,
+    }),
+    geocodeLocation: async () => {
+      throw new Error("no location phrase");
+    },
+  });
+
+  assert.equal(normalized.ignored, false);
+  assert.equal(normalized.messageType, "video");
+  assert.equal(normalized.reportDraft.type, "Violence/Assault");
+  assert.equal(normalized.reportDraft.priority, "High");
+  assert.match(normalized.reportDraft.description, /crowd disturbance/i);
 });
