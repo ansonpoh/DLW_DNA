@@ -6,7 +6,12 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "test": "node --test tests/*.test.js",
+    "telegram:webhook:set": "node scripts/telegramWebhook.js set",
+    "telegram:webhook:info": "node scripts/telegramWebhook.js info",
+    "telegram:webhook:delete": "node scripts/telegramWebhook.js delete",
+    "tunnel:start": "node scripts/localTunnel.js"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",
@@ -14,7 +19,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "localtunnel": "^2.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",

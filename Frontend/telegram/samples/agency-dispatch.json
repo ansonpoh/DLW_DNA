@@ -1,0 +1,28 @@
+{
+  "agency": "LTA_SPF",
+  "routing_mode": "rule_based",
+  "report": {
+    "report_id": "a406ca29-bdc4-4d37-8f2c-8c0f4e81d4f8",
+    "type": "Accident/Traffic",
+    "description": "Two vehicles collided near the junction and one lane is blocked.",
+    "happening_now": true,
+    "safe_to_continue": false,
+    "location_label": "Telegram shared location",
+    "location_source": "telegram_location",
+    "latitude": 1.3001,
+    "longitude": 103.845,
+    "priority": "High",
+    "status": "submitted",
+    "created_at": "2026-03-02T14:16:02.000Z"
+  },
+  "ai_guidance": {
+    "summary": "Traffic collision reported with potential obstruction.",
+    "reassurance_message": "Your report has been flagged for traffic emergency follow-up.",
+    "next_steps": [
+      "Move to a safe location away from active lanes.",
+      "Call emergency services if anyone is injured.",
+      "Share additional hazards if conditions worsen."
+    ],
+    "validation_notes": "Prioritized based on accident keywords and active-risk phrasing."
+  }
+}
