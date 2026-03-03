@@ -1,0 +1,9 @@
+Agency: LTA_SPF
+Report ID: a406ca29-bdc4-4d37-8f2c-8c0f4e81d4f8
+Type: Accident/Traffic
+Priority: High
+Status: submitted
+Location: Telegram shared location
+Coordinates: 1.3001, 103.845
+Description: Two vehicles collided near the junction and one lane is blocked.
+AI Summary: Traffic collision reported with potential obstruction.

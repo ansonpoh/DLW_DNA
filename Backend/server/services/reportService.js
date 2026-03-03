@@ -381,17 +381,7 @@ async function createReportForUserId(userId, payload) {
   };
 }
 
-export async function createReport(authUser, payload) {
-  const reportInput = normalizeCreateReportPayload(payload);
-
-  if (!reportInput.type) {
-    throw new HttpError(400, "Report type is required.");
-  }
-
-  if (!reportInput.description) {
-    throw new HttpError(400, "Report description is required.");
-  }
-
+async function enrichReportInput(reportInput) {
   const aiEnrichment = await enrichUserReport({
     type: reportInput.type,
     description: reportInput.description,
@@ -403,6 +393,7 @@ export async function createReport(authUser, payload) {
     longitude: reportInput.longitude,
     priority: reportInput.priority || null,
   });
+
   if (aiEnrichment?.cleaned_description) {
     reportInput.description = aiEnrichment.cleaned_description;
   }
@@ -414,8 +405,6 @@ export async function createReport(authUser, payload) {
     reportInput.safe_to_continue = false;
   }
 
-  const profileUserId = await getProfileUserId(authUser.id);
-  const created = await createReportForUserId(profileUserId, reportInput);
   const fallbackNextSteps = buildSuggestedNextSteps(reportInput);
   const nextSteps =
     Array.isArray(aiEnrichment?.next_steps) && aiEnrichment.next_steps.length > 0
@@ -426,16 +415,38 @@ export async function createReport(authUser, payload) {
     buildReassuranceMessage(reportInput);
 
   return {
-    ...created,
-    ai_guidance: {
-      used_ai: Boolean(aiEnrichment?.used_ai),
-      summary: String(aiEnrichment?.summary || "").trim(),
-      validation_notes: String(aiEnrichment?.validation_notes || "").trim(),
-      safe_to_continue: Boolean(reportInput.safe_to_continue),
-      reassurance_message: reassuranceMessage,
-      next_steps: nextSteps,
-    },
+    used_ai: Boolean(aiEnrichment?.used_ai),
+    summary: String(aiEnrichment?.summary || "").trim(),
+    validation_notes: String(aiEnrichment?.validation_notes || "").trim(),
+    safe_to_continue: Boolean(reportInput.safe_to_continue),
+    reassurance_message: reassuranceMessage,
+    next_steps: nextSteps,
   };
+}
+
+export async function createReportForProfileUserId(profileUserId, payload) {
+  const reportInput = normalizeCreateReportPayload(payload);
+
+  if (!reportInput.type) {
+    throw new HttpError(400, "Report type is required.");
+  }
+
+  if (!reportInput.description) {
+    throw new HttpError(400, "Report description is required.");
+  }
+
+  const aiGuidance = await enrichReportInput(reportInput);
+  const created = await createReportForUserId(profileUserId, reportInput);
+
+  return {
+    ...created,
+    ai_guidance: aiGuidance,
+  };
+}
+
+export async function createReport(authUser, payload) {
+  const profileUserId = await getProfileUserId(authUser.id);
+  return createReportForProfileUserId(profileUserId, payload);
 }
 
 export async function createDetectionReport(payload) {

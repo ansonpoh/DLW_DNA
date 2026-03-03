@@ -38,6 +38,11 @@ export const env = {
   ).trim(),
   AI_ADMIN_KEY: String(process.env.AI_ADMIN_KEY || "").trim(),
   AI_ADMIN_TIMEOUT_MS: Number(process.env.AI_ADMIN_TIMEOUT_MS || 8000),
+  TELEGRAM_BOT_TOKEN: String(process.env.TELEGRAM_BOT_TOKEN || "").trim(),
+  TELEGRAM_WEBHOOK_SECRET: String(process.env.TELEGRAM_WEBHOOK_SECRET || "").trim(),
+  TELEGRAM_WEBHOOK_URL: String(process.env.TELEGRAM_WEBHOOK_URL || "").trim(),
+  STT_PROVIDER: String(process.env.STT_PROVIDER || "").trim().toLowerCase(),
+  STT_API_KEY: String(process.env.STT_API_KEY || "").trim(),
   STT_SERVICE_TRANSCRIBE_URL: String(
     process.env.STT_SERVICE_TRANSCRIBE_URL || "http://localhost:3013/api/stt/transcribe",
   ).trim(),

@@ -7,6 +7,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import systemRoutes from "./routes/systemRoutes.js";
+import telegramRoutes from "./routes/telegramRoutes.js";
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/telegram", telegramRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
